@@ -10,6 +10,9 @@ pub mod azure;
 #[cfg(feature = "c8y")]
 pub mod c8y;
 
+#[cfg(feature = "tb")]
+pub mod tb;
+
 pub use common_mosquitto_config::*;
 pub use config::BridgeConfig;
 pub use config::BridgeLocation;
