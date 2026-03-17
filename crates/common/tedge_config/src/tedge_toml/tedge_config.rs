@@ -77,6 +77,7 @@ const DEFAULT_ROOT_CERT_PATH: &str = "/etc/ssl/certs";
 pub const C8Y_MQTT_PAYLOAD_LIMIT: u32 = 16184; // 16 KB
 pub const AZ_MQTT_PAYLOAD_LIMIT: u32 = 262144; // 256 KB
 pub const AWS_MQTT_PAYLOAD_LIMIT: u32 = 131072; // 128 KB
+pub const TB_MQTT_PAYLOAD_LIMIT: u32 = 262144; // 256 KB
 
 pub trait OptionalConfigError<T> {
     fn or_err(&self) -> Result<&T, ReadError>;
