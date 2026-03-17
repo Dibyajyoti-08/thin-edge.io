@@ -1,4 +1,5 @@
 use camino::Utf8Path;
+use std::time::SystemTime;
 use tedge_api::mqtt_topics::MqttSchema;
 use tedge_config::models::TopicPrefix;
 use tedge_flows::ConfigError;
@@ -49,8 +50,7 @@ impl TbConverter {
         &self,
         flows_dir: impl AsRef<Utf8Path>,
     ) -> Result<ConnectedFlowRegistry, UpdateFlowRegistryError> {
-        create_directory_with_defaults(flows_dir.as_ref())
-            .map_err(|e| UpdateFlowRegistryError::Other(e.into()))?;
+        create_directory_with_defaults(flows_dir.as_ref()).await?;
         let mut flows = ConnectedFlowRegistry::new(flows_dir);
         flows.register_builtin(SetTbTopic::default());
         self.persist_builtin_flow(&mut flows).await?;
@@ -61,9 +61,8 @@ impl TbConverter {
         &self,
         flows: &mut ConnectedFlowRegistry,
     ) -> Result<(), UpdateFlowRegistryError> {
-        let flow_definition = self.builtin_flow();
         flows
-            .update_flow("tb_builtin", &flow_definition)
+            .persist_builtin_flow("tb_builtin", self.builtin_flow().as_str())
             .await
     }
 
@@ -109,65 +108,41 @@ errors.mqtt.topic = "{errors_topic}"
 /// - Attributes: `v1/gateway/attributes`
 ///
 /// This transformer maps thin-edge.io topics to ThingsBoard topics.
-fn map_to_tb_topic(source: &str, prefix: &str) -> Option<String> {
-    let schema = MqttSchema::with_root(prefix.to_string());
-
-    // Parse the thin-edge topic to determine the entity and channel
-    if let Ok((entity_id, channel)) = schema.entity_channel_of(&Topic::new_unchecked(source)) {
-        let device_name = entity_id.default_device_name().unwrap_or("main");
-        let is_main_device = device_name == "main";
-
-        match channel.as_str() {
-            // Measurements -> Telemetry
-            c if c.contains("/m/") || c.ends_with("/m/") => {
-                if is_main_device {
-                    Some("v1/devices/me/telemetry".to_string())
-                } else {
-                    // Gateway mode: wrap payload with device name
-                    Some("v1/gateway/telemetry".to_string())
-                }
-            }
-            // Events and Alarms -> Telemetry (ThingsBoard treats these as telemetry)
-            c if c.contains("/e/") || c.contains("/a/") => {
-                if is_main_device {
-                    Some("v1/devices/me/telemetry".to_string())
-                } else {
-                    Some("v1/gateway/telemetry".to_string())
-                }
-            }
-            // Twin data -> Attributes
-            c if c.contains("/twin/") => {
-                if is_main_device {
-                    Some("v1/devices/me/attributes".to_string())
-                } else {
-                    Some("v1/gateway/attributes".to_string())
-                }
-            }
-            // Health status -> Telemetry
-            c if c.contains("/status/health") => {
-                if is_main_device {
-                    Some("v1/devices/me/telemetry".to_string())
-                } else {
-                    Some("v1/gateway/telemetry".to_string())
-                }
-            }
-            _ => None,
+fn map_to_tb_topic(source: &str) -> Option<String> {
+    // Use topic segments to determine message type and device scope.
+    // thin-edge.io topics follow: te/<device_type>/<device_id>/<service_type>/<service_id>/<channel>/<type>
+    match source.split('/').collect::<Vec<_>>()[..] {
+        // Main device measurements -> Telemetry
+        [_, "device", "main", _, _, "m", _] => Some("v1/devices/me/telemetry".to_string()),
+        // Child device measurements -> Gateway telemetry
+        [_, "device", _, _, _, "m", _] => Some("v1/gateway/telemetry".to_string()),
+        // Main device events -> Telemetry
+        [_, "device", "main", _, _, "e", _] => Some("v1/devices/me/telemetry".to_string()),
+        // Child device events -> Gateway telemetry
+        [_, "device", _, _, _, "e", _] => Some("v1/gateway/telemetry".to_string()),
+        // Main device alarms -> Telemetry
+        [_, "device", "main", _, _, "a", _] => Some("v1/devices/me/telemetry".to_string()),
+        // Child device alarms -> Gateway telemetry
+        [_, "device", _, _, _, "a", _] => Some("v1/gateway/telemetry".to_string()),
+        // Main device twin -> Attributes
+        [_, "device", "main", _, _, "twin", _] => Some("v1/devices/me/attributes".to_string()),
+        // Child device twin -> Gateway attributes
+        [_, "device", _, _, _, "twin", _] => Some("v1/gateway/attributes".to_string()),
+        // Main device health -> Telemetry
+        [_, "device", "main", _, _, "status", "health"] => {
+            Some("v1/devices/me/telemetry".to_string())
         }
-    } else {
-        None
+        // Child device health -> Gateway telemetry
+        [_, "device", _, _, _, "status", "health"] => Some("v1/gateway/telemetry".to_string()),
+        _ => None,
     }
 }
 
-/// Wraps a payload for ThingsBoard gateway mode.
+/// Extracts the device name from a thin-edge topic.
 ///
-/// ThingsBoard gateway expects:
-/// ```json
-/// { "Device A": [{ "key": "value" }] }
-/// ```
-fn wrap_for_gateway(device_name: &str, payload: serde_json::Value) -> serde_json::Value {
-    serde_json::json!({
-        device_name: [payload]
-    })
+/// e.g. "te/device/child01///m/temperature" -> "child01"
+fn extract_device_name(topic: &str) -> &str {
+    topic.split('/').nth(2).unwrap_or("main")
 }
 
 #[derive(Clone, Default)]
@@ -181,25 +156,19 @@ impl tedge_flows::Transformer for SetTbTopic {
     }
 
     fn set_config(&mut self, config: JsonValue) -> Result<(), ConfigError> {
-        if let Some(prefix) = config.get("prefix").and_then(|v| v.as_str()) {
-            self.prefix = prefix.to_string();
-        }
+        let prefix = config.string_property("prefix").unwrap_or("tb");
+        self.prefix = prefix.to_owned();
         Ok(())
     }
 
     fn on_message(
-        &self,
+        &mut self,
+        _timestamp: SystemTime,
+        message: &Message,
         _context: &FlowContextHandle,
-        message: Message,
     ) -> Result<Vec<Message>, FlowError> {
-        let source_topic = message.topic.name.as_str();
-
-        if let Some(tb_topic) = map_to_tb_topic(source_topic, &self.prefix) {
-            let output = Message {
-                topic: Topic::new_unchecked(&tb_topic),
-                ..message
-            };
-            Ok(vec![output])
+        if let Some(tb_topic) = map_to_tb_topic(&message.topic) {
+            Ok(vec![Message::new(tb_topic, message.payload.clone())])
         } else {
             // Unknown topic pattern — skip
             Ok(vec![])
@@ -213,41 +182,55 @@ mod tests {
 
     #[test]
     fn test_main_device_measurement_topic() {
-        let topic = map_to_tb_topic("te/device/main///m/temperature", "te");
+        let topic = map_to_tb_topic("te/device/main///m/temperature");
         assert_eq!(topic, Some("v1/devices/me/telemetry".to_string()));
     }
 
     #[test]
     fn test_child_device_measurement_topic() {
-        let topic = map_to_tb_topic("te/device/child01///m/temperature", "te");
+        let topic = map_to_tb_topic("te/device/child01///m/temperature");
         assert_eq!(topic, Some("v1/gateway/telemetry".to_string()));
     }
 
     #[test]
+    fn test_main_device_event_topic() {
+        let topic = map_to_tb_topic("te/device/main///e/login");
+        assert_eq!(topic, Some("v1/devices/me/telemetry".to_string()));
+    }
+
+    #[test]
+    fn test_main_device_alarm_topic() {
+        let topic = map_to_tb_topic("te/device/main///a/high_temp");
+        assert_eq!(topic, Some("v1/devices/me/telemetry".to_string()));
+    }
+
+    #[test]
     fn test_main_device_twin_topic() {
-        let topic = map_to_tb_topic("te/device/main///twin/my_attribute", "te");
+        let topic = map_to_tb_topic("te/device/main///twin/my_attribute");
         assert_eq!(topic, Some("v1/devices/me/attributes".to_string()));
     }
 
     #[test]
     fn test_child_device_twin_topic() {
-        let topic = map_to_tb_topic("te/device/child01///twin/my_attribute", "te");
+        let topic = map_to_tb_topic("te/device/child01///twin/my_attribute");
         assert_eq!(topic, Some("v1/gateway/attributes".to_string()));
     }
 
     #[test]
+    fn test_main_device_health_topic() {
+        let topic = map_to_tb_topic("te/device/main///status/health");
+        assert_eq!(topic, Some("v1/devices/me/telemetry".to_string()));
+    }
+
+    #[test]
     fn test_unknown_topic_returns_none() {
-        let topic = map_to_tb_topic("te/device/main///cmd/restart", "te");
+        let topic = map_to_tb_topic("te/device/main///cmd/restart");
         assert_eq!(topic, None);
     }
 
     #[test]
-    fn test_wrap_for_gateway() {
-        let payload = serde_json::json!({"temperature": 25.0});
-        let wrapped = wrap_for_gateway("child01", payload);
-        assert_eq!(
-            wrapped,
-            serde_json::json!({"child01": [{"temperature": 25.0}]})
-        );
+    fn test_extract_device_name() {
+        assert_eq!(extract_device_name("te/device/child01///m/temp"), "child01");
+        assert_eq!(extract_device_name("te/device/main///m/temp"), "main");
     }
 }
