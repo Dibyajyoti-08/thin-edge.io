@@ -1,6 +1,6 @@
 [package]
 name = "tedge-mapper"
-description = "tedge-mapper translates thin-edge.io data model to c8y/az/aws data model"
+description = "tedge-mapper translates thin-edge.io data model to c8y/az/aws/tb data model"
 version = { workspace = true }
 authors = { workspace = true }
 edition = { workspace = true }
@@ -13,6 +13,7 @@ repository = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 aws_mapper_ext = { workspace = true, optional = true }
+tb_mapper_ext = { workspace = true, optional = true}
 az_mapper_ext = { workspace = true, optional = true }
 batcher = { workspace = true }
 c8y_api = { workspace = true, optional = true }
@@ -48,10 +49,11 @@ tedge_config = { workspace = true, features = ["test"] }
 tedge_test_utils = { workspace = true }
 
 [features]
-default = ["aws", "azure", "c8y"]
+default = ["aws", "azure", "c8y", "tb"]
 aws = ["dep:aws_mapper_ext"]
 azure = ["dep:az_mapper_ext"]
 c8y = ["dep:c8y_mapper_ext", "dep:c8y_api", "dep:c8y_auth_proxy"]
+tb = ["dep:tb_mapper_ext"]
 integration-test = []
 
 [lints]
