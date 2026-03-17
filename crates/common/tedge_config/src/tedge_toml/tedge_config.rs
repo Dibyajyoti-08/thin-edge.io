@@ -34,6 +34,7 @@ use crate::tedge_toml::mapper_config::HasPath as _;
 use crate::tedge_toml::mapper_config::HasUrl;
 use crate::tedge_toml::mapper_config::MapperConfigError;
 use crate::tedge_toml::mapper_config::SpecialisedCloudConfig;
+use crate::tedge_toml::mapper_config::TbMapperSpecificConfig;
 use anyhow::anyhow;
 use anyhow::Context;
 use camino::Utf8Path;
@@ -183,6 +184,7 @@ impl TEdgeConfigDto {
         Self::populate_single_mapper::<C8yMapperSpecificConfig>(&mut self.c8y, location).await?;
         Self::populate_single_mapper::<AzMapperSpecificConfig>(&mut self.az, location).await?;
         Self::populate_single_mapper::<AwsMapperSpecificConfig>(&mut self.aws, location).await?;
+        Self::populate_single_mapper::<TbMapperSpecificConfig>(&mut self.tb, location).await?;
         Ok(())
     }
 }
@@ -223,6 +225,13 @@ impl TEdgeConfig {
         self.mapper_config(profile)
     }
 
+    pub fn tb_mapper_config(
+        &self,
+        profile: &Option<impl Borrow<ProfileName>>,
+    ) -> anyhow::Result<MapperConfig<TbMapperSpecificConfig>> {
+        self.mapper_config(profile)
+    }
+
     pub fn mapper_config<T: SpecialisedCloudConfig>(
         &self,
         profile: &Option<impl Borrow<ProfileName>>,
@@ -243,6 +252,7 @@ impl TEdgeConfig {
             CloudType::C8y => Box::new(self.c8y.keys().map(|p| p.map(<_>::to_owned))),
             CloudType::Az => Box::new(self.az.keys().map(|p| p.map(<_>::to_owned))),
             CloudType::Aws => Box::new(self.aws.keys().map(|p| p.map(<_>::to_owned))),
+            CloudType::Tb => Box::new(self.tb.keys().map(|p| p.map(<_>::to_owned))),
         }
     }
 
@@ -271,6 +281,7 @@ impl TEdgeConfig {
             Cloud::C8y(profile) => self.c8y_mapper_config(&profile).map(Box::new)?,
             Cloud::Az(profile) => self.az_mapper_config(&profile).map(Box::new)?,
             Cloud::Aws(profile) => self.aws_mapper_config(&profile).map(Box::new)?,
+            Cloud::Tb(profile) => self.tb_mapper_config(&profile).map(Box::new)?,
         })
     }
 
@@ -280,6 +291,7 @@ impl TEdgeConfig {
             Some(Cloud::C8y(profile)) => self.c8y_mapper_config(&profile)?.device.id()?,
             Some(Cloud::Az(profile)) => self.az_mapper_config(&profile)?.device.id()?,
             Some(Cloud::Aws(profile)) => self.aws_mapper_config(&profile)?.device.id()?,
+            Some(Cloud::Tb(profile)) => self.tb_mapper_config(&profile)?.device.id()?,
         })
     }
 
@@ -292,6 +304,7 @@ impl TEdgeConfig {
             Some(Cloud::C8y(profile)) => self.c8y_mapper_config(&profile)?.device.key_path.clone(),
             Some(Cloud::Az(profile)) => self.az_mapper_config(&profile)?.device.key_path.clone(),
             Some(Cloud::Aws(profile)) => self.aws_mapper_config(&profile)?.device.key_path.clone(),
+            Some(Cloud::Tb(profile)) => self.tb_mapper_config(&profile)?.device.key_path.clone(),
         })
     }
 
@@ -304,6 +317,7 @@ impl TEdgeConfig {
             Some(Cloud::C8y(profile)) => self.c8y_mapper_config(&profile)?.device.cert_path.clone(),
             Some(Cloud::Az(profile)) => self.az_mapper_config(&profile)?.device.cert_path.clone(),
             Some(Cloud::Aws(profile)) => self.aws_mapper_config(&profile)?.device.cert_path.clone(),
+            Some(Cloud::Tb(profile)) => self.tb_mapper_config(&profile)?.device.cert_path.clone(),
         })
     }
 
@@ -316,6 +330,7 @@ impl TEdgeConfig {
             Some(Cloud::C8y(profile)) => self.c8y_mapper_config(&profile)?.device.csr_path.clone(),
             Some(Cloud::Az(profile)) => self.az_mapper_config(&profile)?.device.csr_path.clone(),
             Some(Cloud::Aws(profile)) => self.aws_mapper_config(&profile)?.device.csr_path.clone(),
+            Some(Cloud::Tb(profile)) => self.tb_mapper_config(&profile)?.device.csr_path.clone(),
         })
     }
 
@@ -331,10 +346,14 @@ impl TEdgeConfig {
                 let aws_roots =
                     futures::stream::iter(self.all_mapper_configs::<AwsMapperSpecificConfig>())
                         .flat_map(|(mapper, _profile)| stream_trust_store(mapper));
+                let tb_roots =
+                    futures::stream::iter(self.all_mapper_configs::<TbMapperSpecificConfig>())
+                        .flat_map(|(mapper, _profile)| stream_trust_store(mapper));
 
                 c8y_roots
                     .chain(az_roots)
                     .chain(aws_roots)
+                    .chain(tb_roots)
                     .collect::<Vec<_>>()
                     .await
                     .into()
@@ -1020,6 +1039,97 @@ define_tedge_config! {
         topics: TemplatesSet,
     },
 
+    #[tedge_config(multi)]
+    #[tedge_config(reader(private))]
+    tb: {
+        #[tedge_config(reader(skip))]
+        #[serde(skip)]
+        mapper_config_dir: Utf8PathBuf,
+
+        #[tedge_config(reader(skip))]
+        #[serde(skip)]
+        mapper_config_file: Utf8PathBuf,
+
+        /// Endpoint URL of ThingsBoard tenant
+        #[tedge_config(example = "your-thingsboard.example.com")]
+        url: ConnectUrl,
+
+        /// The path where ThingsBoard root certificate(s) are stored
+        #[tedge_config(note = "The value can be a directory path as well as the path of the certificate file.")]
+        #[tedge_config(example = "/etc/tedge/tb-trusted-root-certificates.pem", default(function = "default_root_cert_path"))]
+        root_cert_path: AbsolutePath,
+
+        device: {
+            /// Identifier of the device within the fleet. It must be globally
+            /// unique and is derived from the device certificate.
+            #[tedge_config(reader(function = "tb_device_id"))]
+            #[tedge_config(default(from_optional_key = "device.id"))]
+            #[tedge_config(example = "Raspberrypi-4d18303a-6d3a-11eb-b1a6-175f6bb72665")]
+            #[doku(as = "String")]
+            id: Result<String, ReadError>,
+
+            /// Path where the device's private key is stored
+            #[tedge_config(example = "/etc/tedge/device-certs/tedge-private-key.pem", default(from_key = "device.key_path"))]
+            key_path: AbsolutePath,
+
+            /// Path where the device's certificate is stored
+            #[tedge_config(example = "/etc/tedge/device-certs/tedge-certificate.pem", default(from_key = "device.cert_path"))]
+            cert_path: AbsolutePath,
+
+            /// Path where the device's certificate signing request is stored
+            #[tedge_config(example = "/etc/tedge/device-certs/tedge.csr", default(from_key = "device.csr_path"))]
+            csr_path: AbsolutePath,
+
+            /// A PKCS#11 URI of the private key.
+            ///
+            /// See RFC #7512.
+            #[tedge_config(example = "pkcs11:token=my-pkcs11-token;object=my-key")]
+            key_uri: Arc<str>,
+
+            /// User PIN value for logging into the PKCS#11 token provided by the consumer.
+            #[tedge_config(example = "123456", example = "my-pin")]
+            key_pin: Arc<str>,
+
+            /// ThingsBoard device access token for token-based authentication
+            #[tedge_config(example = "YOUR_ACCESS_TOKEN")]
+            secret: String,
+        },
+
+        mapper: {
+            /// Whether the ThingsBoard mapper should add a timestamp or not
+            #[tedge_config(example = "true")]
+            #[tedge_config(default(value = true))]
+            timestamp: bool,
+
+            /// The format that will be used by the mapper when sending timestamps to ThingsBoard
+            #[tedge_config(example = "rfc-3339")]
+            #[tedge_config(example = "unix")]
+            #[tedge_config(default(variable = "TimeFormat::Unix"))]
+            timestamp_format: TimeFormat,
+
+            mqtt: {
+                /// The maximum message payload size that can be mapped to the cloud via MQTT
+                #[tedge_config(example = "262144", default(function = "tb_mqtt_payload_limit"))]
+                max_payload_size: MqttPayloadLimit,
+            }
+        },
+
+        bridge: {
+            /// The topic prefix that will be used for the bridge MQTT topic
+            #[tedge_config(example = "tb", default(function = "tb_topic_prefix"))]
+            topic_prefix: TopicPrefix,
+
+            /// The amount of time after which the bridge should send a ping if no other traffic has occurred
+            #[tedge_config(example = "60s", default(from_str = "60s"))]
+            keepalive_interval: SecondsOrHumanTime,
+        },
+
+        /// Set of MQTT topics the ThingsBoard mapper should subscribe to
+        #[tedge_config(example = "te/+/+/+/+/a/+,te/+/+/+/+/m/+,te/+/+/+/+/e/+")]
+        #[tedge_config(default(value = "te/+/+/+/+/m/+,te/+/+/+/+/e/+,te/+/+/+/+/a/+,te/+/+/+/+/status/health"))]
+        topics: TemplatesSet,
+    },
+
     mqtt: {
         /// MQTT topic root
         #[tedge_config(default(value = "te"))]
@@ -1435,6 +1545,18 @@ impl TEdgeConfigReader {
         self.aws.entries()
     }
 
+    pub fn tb_keys(&self) -> impl Iterator<Item = Option<&ProfileName>> {
+        self.tb.keys()
+    }
+
+    pub fn tb_keys_str(&self) -> impl Iterator<Item = Option<&str>> {
+        self.tb.keys_str()
+    }
+
+    pub fn tb_entries(&self) -> impl Iterator<Item = (Option<&str>, &TEdgeConfigReaderTb)> {
+        self.tb.entries()
+    }
+
     pub fn cloud_client_tls_config(&self) -> rustls::ClientConfig {
         // TODO do we want to unwrap here?
         client_config_for_ca_certificates(
@@ -1442,7 +1564,8 @@ impl TEdgeConfigReader {
                 .values()
                 .map(|c8y| &c8y.root_cert_path)
                 .chain(self.az.values().map(|az| &az.root_cert_path))
-                .chain(self.aws.values().map(|aws| &aws.root_cert_path)),
+                .chain(self.aws.values().map(|aws| &aws.root_cert_path))
+                .chain(self.tb.values().map(|tb| &tb.root_cert_path)),
         )
         .unwrap()
     }
@@ -1453,6 +1576,7 @@ pub enum Cloud<'a> {
     C8y(Option<&'a ProfileName>),
     Az(Option<&'a ProfileName>),
     Aws(Option<&'a ProfileName>),
+    Tb(Option<&'a ProfileName>),
 }
 
 pub trait CloudConfig {
@@ -1502,6 +1626,10 @@ fn aws_topic_prefix() -> TopicPrefix {
     TopicPrefix::try_new("aws").unwrap()
 }
 
+fn tb_topic_prefix() -> TopicPrefix {
+    TopicPrefix::try_new("tb").unwrap()
+}
+
 fn c8y_mqtt_payload_limit() -> MqttPayloadLimit {
     C8Y_MQTT_PAYLOAD_LIMIT.try_into().unwrap()
 }
@@ -1512,6 +1640,10 @@ fn az_mqtt_payload_limit() -> MqttPayloadLimit {
 
 fn aws_mqtt_payload_limit() -> MqttPayloadLimit {
     AWS_MQTT_PAYLOAD_LIMIT.try_into().unwrap()
+}
+
+fn tb_mqtt_payload_limit() -> MqttPayloadLimit {
+    TB_MQTT_PAYLOAD_LIMIT.try_into().unwrap()
 }
 
 fn default_http_bind_address(dto: &TEdgeConfigDto) -> IpAddr {
@@ -1575,6 +1707,20 @@ fn aws_device_id(
 ) -> Result<String, ReadError> {
     match (
         device_id_from_cert(&aws_device.cert_path),
+        dto_value.or_none(),
+    ) {
+        (Ok(common_name), _) => Ok(common_name),
+        (Err(_), Some(dto_value)) => Ok(dto_value.to_string()),
+        (Err(err), None) => Err(err),
+    }
+}
+
+fn tb_device_id(
+    tb_device: &TEdgeConfigReaderTbDevice,
+    dto_value: &OptionalConfig<String>,
+) -> Result<String, ReadError> {
+    match (
+        device_id_from_cert(&tb_device.cert_path),
         dto_value.or_none(),
     ) {
         (Ok(common_name), _) => Ok(common_name),
@@ -1801,6 +1947,10 @@ mod tests {
     #[test_case::test_case("aws.url")]
     #[test_case::test_case("aws.root.cert.path")]
     #[test_case::test_case("aws.mapper.timestamp")]
+    #[test_case::test_case("tb.url")]
+    #[test_case::test_case("tb.root.cert.path")]
+    #[test_case::test_case("tb.device.id")]
+    #[test_case::test_case("tb.mapper.timestamp")]
     #[test_case::test_case("az.mapper.timestamp")]
     #[test_case::test_case("mqtt.bind_address")]
     #[test_case::test_case("http.address")]
