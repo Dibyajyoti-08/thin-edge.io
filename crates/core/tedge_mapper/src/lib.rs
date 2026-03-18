@@ -29,6 +29,8 @@ pub mod c8y;
 mod collectd;
 mod core;
 mod flows;
+#[cfg(feature = "tb")]
+mod tb;
 
 /// Set the cloud profile either from the CLI argument or env variable,
 /// then set the environment variable so child processes automatically
@@ -60,6 +62,10 @@ fn lookup_component(component_name: MapperName) -> Box<dyn TEdgeComponent> {
             profile: read_and_set_var!(profile, "TEDGE_CLOUD_PROFILE"),
         }),
         MapperName::Collectd => Box::new(CollectdMapper),
+        #[cfg(feature = "tb")]
+        MapperName::Tb { profile } => Box::new(TbMapper {
+            profile: read_and_set_var!(profile, "TEDGE_CLOUD_PROFILE"),
+        }),
         #[cfg(feature = "c8y")]
         MapperName::C8y { profile } => Box::new(CumulocityMapper {
             profile: read_and_set_var!(profile, "TEDGE_CLOUD_PROFILE"),
@@ -107,6 +113,11 @@ pub enum MapperName {
         #[clap(long)]
         profile: Option<ProfileName>,
     },
+    #[cfg(feature = "tb")]
+    Tb {
+        #[clap(long)]
+        profile: Option<ProfileName>,
+    },
     #[cfg(feature = "c8y")]
     C8y {
         /// The cloud profile to use
@@ -132,6 +143,12 @@ impl fmt::Display for MapperName {
             MapperName::Aws {
                 profile: Some(profile),
             } => write!(f, "tedge-mapper-aws@{profile}"),
+            #[cfg(feature = "tb")]
+            MapperName::Tb { profile: None } => write!(f, "tedge-mapper-tb"),
+            #[cfg(feature = "tb")]
+            MapperName::Tb {
+                profile: Some(profile),
+            } => write!(f, "tedge-mapper-tb@{profile}"),
             #[cfg(feature = "c8y")]
             MapperName::C8y { profile: None } => write!(f, "tedge-mapper-c8y"),
             #[cfg(feature = "c8y")]
