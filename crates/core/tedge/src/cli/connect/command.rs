@@ -4,6 +4,8 @@ use crate::bridge::aws::BridgeConfigAwsParams;
 use crate::bridge::azure::BridgeConfigAzureParams;
 #[cfg(feature = "c8y")]
 use crate::bridge::c8y::BridgeConfigC8yParams;
+#[cfg(feature = "tb")]
+use crate::bridge::tb::BridgeConfigTbParams;
 use crate::bridge::BridgeConfig;
 use crate::bridge::BridgeLocation;
 use crate::bridge::CommonMosquittoConfig;
@@ -12,6 +14,8 @@ use crate::cli::common::Cloud;
 use crate::cli::common::MaybeBorrowedCloud;
 #[cfg(feature = "c8y")]
 use crate::cli::connect::c8y::*;
+#[cfg(feature = "tb")]
+use crate::cli::connect::tb::*;
 use crate::cli::connect::*;
 use crate::cli::log::ConfigLogger;
 use crate::cli::log::Fancy;
@@ -55,6 +59,8 @@ use tedge_config::tedge_toml::mapper_config::C8yMapperSpecificConfig;
 use tedge_config::tedge_toml::mapper_config::HasUrl;
 use tedge_config::tedge_toml::mapper_config::MapperConfig;
 use tedge_config::tedge_toml::mapper_config::SpecialisedCloudConfig;
+#[cfg(feature = "tb")]
+use tedge_config::tedge_toml::mapper_config::TbMapperSpecificConfig;
 #[cfg(feature = "c8y")]
 use tedge_config::tedge_toml::ProfileName;
 use tedge_config::tedge_toml::TEdgeConfigReaderMqtt;
@@ -286,6 +292,8 @@ impl ConnectCommand {
             Cloud::Aws(_) => (),
             #[cfg(feature = "azure")]
             Cloud::Azure(_) => (),
+            #[cfg(feature = "tb")]
+            Cloud::Tb(_) => (),
         }
 
         if connection_check_success {
@@ -396,6 +404,8 @@ impl ConnectCommand {
             Cloud::Aws(_) => Ok(()),
             #[cfg(feature = "azure")]
             Cloud::Azure(_) => Ok(()),
+            #[cfg(feature = "tb")]
+            Cloud::Tb(_) => Ok(()),
         }
     }
 }
@@ -414,6 +424,8 @@ async fn credentials_path_for(
         Cloud::Aws(_) => Ok(None),
         #[cfg(feature = "azure")]
         Cloud::Azure(_) => Ok(None),
+        #[cfg(feature = "tb")]
+        Cloud::Tb(_) => Ok(None),
     }
 }
 
@@ -455,6 +467,8 @@ impl ConnectCommand {
             Cloud::Aws(_) => Ok(None),
             #[cfg(feature = "azure")]
             Cloud::Azure(_) => Ok(None),
+            #[cfg(feature = "tb")]
+            Cloud::Tb(_) => Ok(None),
         }
     }
 
@@ -490,6 +504,10 @@ impl ConnectCommand {
             #[cfg(feature = "aws")]
             Cloud::Aws(profile) => {
                 aws::check_device_status_aws(tedge_config, profile.as_deref()).await
+            }
+            #[cfg(feature = "tb")]
+            Cloud::Tb(profile) => {
+                tb::check_device_status_tb(tedge_config, profile.as_deref()).await
             }
             #[cfg(feature = "c8y")]
             Cloud::C8y(profile) => check_device_status_c8y(tedge_config, profile.as_deref()).await,
@@ -545,6 +563,12 @@ fn validate_config(config: &TEdgeConfig, cloud: &MaybeBorrowedCloud<'_>) -> anyh
             disallow_matching_url_device_id(&configs)?;
             disallow_matching_bridge_topic_prefix(&configs)?;
             disallow_matching_proxy_bind_port(&configs)?;
+        }
+        #[cfg(feature = "tb")]
+        MaybeBorrowedCloud::Tb(_) => {
+            let configs = config.all_mapper_configs::<TbMapperSpecificConfig>();
+            disallow_matching_url_device_id(&configs)?;
+            disallow_matching_bridge_topic_prefix(&configs)?;
         }
     }
     Ok(())
@@ -740,6 +764,30 @@ pub async fn bridge_config(
 
             Ok(BridgeConfig::from(params))
         }
+        #[cfg(feature = "tb")]
+        MaybeBorrowedCloud::Tb(profile) => {
+            let tb_config = config.mapper_config::<TbMapperSpecificConfig>(profile)?;
+
+            let params = BridgeConfigTbParams {
+                mqtt_host: HostPort::<MQTT_TLS_PORT>::try_from(
+                    tb_config.url().or_config_not_set()?.as_str(),
+                )
+                .map_err(TEdgeConfigError::from)?,
+                config_file: cloud.mosquitto_config_filename(),
+                bridge_root_cert_path: tb_config.root_cert_path.clone().into(),
+                remote_clientid: tb_config.device.id()?.clone(),
+                bridge_certfile: tb_config.device.cert_path.clone().into(),
+                bridge_keyfile: tb_config.device.key_path.clone().into(),
+                bridge_location,
+                topic_prefix: tb_config.bridge.topic_prefix.clone(),
+                profile_name: profile.clone().map(Cow::into_owned),
+                mqtt_schema,
+                keepalive_interval: tb_config.bridge.keepalive_interval.duration(),
+                proxy,
+            };
+
+            Ok(BridgeConfig::from(params))
+        }
         #[cfg(feature = "c8y")]
         MaybeBorrowedCloud::C8y(profile) => {
             use tedge_config::models::MQTT_CORE_TLS_PORT;
@@ -878,6 +926,8 @@ impl ConnectCommand {
             Cloud::Aws(_) => (),
             #[cfg(feature = "azure")]
             Cloud::Azure(_) => (),
+            #[cfg(feature = "tb")]
+            Cloud::Tb(_) => (),
         }
 
         if let Err(err) =

@@ -39,6 +39,15 @@ pub enum CloudArg {
         #[arg(add(ArgValueCandidates::new(profile_completions)))]
         profile: Option<ProfileName>,
     },
+    #[cfg(feature = "tb")]
+    Tb {
+        /// The cloud profile you wish to use
+        ///
+        /// [env: TEDGE_CLOUD_PROFILE]
+        #[clap(long)]
+        #[arg(add(ArgValueCandidates::new(profile_completions)))]
+        profile: Option<ProfileName>,
+    },
 }
 
 impl TryFrom<CloudArg> for Cloud {
@@ -77,12 +86,18 @@ impl CloudArg {
             Self::C8y {
                 profile: Some(profile),
             } => Cloud::c8y(Some(profile)),
+            #[cfg(feature = "tb")]
+            Self::Tb {
+                profile: Some(profile),
+            } => Cloud::tb(Some(profile)),
             #[cfg(feature = "aws")]
             Self::Aws { profile: None } => Cloud::aws(read_env()?),
             #[cfg(feature = "azure")]
             Self::Az { profile: None } => Cloud::az(read_env()?),
             #[cfg(feature = "c8y")]
             Self::C8y { profile: None } => Cloud::c8y(read_env()?),
+            #[cfg(feature = "tb")]
+            Self::Tb { profile: None } => Cloud::tb(read_env()?),
         })
     }
 }
@@ -100,6 +115,8 @@ pub enum MaybeBorrowedCloud<'a> {
     Azure(Option<Cow<'a, ProfileName>>),
     #[cfg(feature = "aws")]
     Aws(Option<Cow<'a, ProfileName>>),
+    #[cfg(feature = "tb")]
+    Tb(Option<Cow<'a, ProfileName>>),
 }
 
 impl fmt::Display for MaybeBorrowedCloud<'_> {
@@ -114,6 +131,8 @@ impl fmt::Display for MaybeBorrowedCloud<'_> {
                 Self::Azure(_) => "Azure",
                 #[cfg(feature = "aws")]
                 Self::Aws(_) => "Aws",
+                #[cfg(feature = "tb")]
+                Self::Tb(_) => "ThingsBoard",
             }
         )
     }
@@ -128,6 +147,8 @@ impl<'a> From<&'a MaybeBorrowedCloud<'a>> for tedge_config::tedge_toml::Cloud<'a
             MaybeBorrowedCloud::Azure(p) => tedge_config::tedge_toml::Cloud::Az(p.as_deref()),
             #[cfg(feature = "aws")]
             MaybeBorrowedCloud::Aws(p) => tedge_config::tedge_toml::Cloud::Aws(p.as_deref()),
+            #[cfg(feature = "tb")]
+            MaybeBorrowedCloud::Tb(p) => tedge_config::tedge_toml::Cloud::Tb(p.as_deref()),
         }
     }
 }
@@ -147,6 +168,11 @@ impl Cloud {
     pub fn aws(profile: Option<ProfileName>) -> Self {
         Self::Aws(profile.map(Cow::Owned))
     }
+
+    #[cfg(feature = "tb")]
+    pub fn tb(profile: Option<ProfileName>) -> Self {
+        Self::Tb(profile.map(Cow::Owned))
+    }
 }
 
 impl<'a> CloudBorrow<'a> {
@@ -162,6 +188,10 @@ impl<'a> CloudBorrow<'a> {
     pub fn aws_borrowed(profile: Option<&'a ProfileName>) -> Self {
         Self::Aws(profile.map(Cow::Borrowed))
     }
+    #[cfg(feature = "tb")]
+    pub fn tb_borrowed(profile: Option<&'a ProfileName>) -> Self {
+        Self::Tb(profile.map(Cow::Borrowed))
+    }
 }
 
 impl MaybeBorrowedCloud<'_> {
@@ -173,6 +203,8 @@ impl MaybeBorrowedCloud<'_> {
             Self::Azure(profile) => SystemService::TEdgeMapperAz(profile.as_deref()),
             #[cfg(feature = "c8y")]
             Self::C8y(profile) => SystemService::TEdgeMapperC8y(profile.as_deref()),
+            #[cfg(feature = "tb")]
+            Self::Tb(profile) => SystemService::TEdgeMapperTb(profile.as_deref()),
         }
     }
 
@@ -190,6 +222,10 @@ impl MaybeBorrowedCloud<'_> {
             Self::Azure(None) => "az-bridge.conf".into(),
             #[cfg(feature = "azure")]
             Self::Azure(Some(profile)) => format!("az@{profile}-bridge.conf").into(),
+            #[cfg(feature = "tb")]
+            Self::Tb(None) => "tb-bridge.conf".into(),
+            #[cfg(feature = "tb")]
+            Self::Tb(Some(profile)) => format!("tb@{profile}-bridge.conf").into,
         }
     }
 
@@ -201,6 +237,8 @@ impl MaybeBorrowedCloud<'_> {
             Self::Aws(profile) => profile.as_deref(),
             #[cfg(feature = "azure")]
             Self::Azure(profile) => profile.as_deref(),
+            #[cfg(feature = "tb")]
+            Self::Tb(profile) => profile.as_deref(),
         }
     }
 }
@@ -230,6 +268,7 @@ async fn profile_completions_for_config_dir(dir: impl AsRef<Path>) -> Vec<Comple
         .map(CompletionCandidate::new)
         .chain(tc.az_keys_str().flatten().map(CompletionCandidate::new))
         .chain(tc.aws_keys_str().flatten().map(CompletionCandidate::new))
+        .chain(tc.tb_keys_str().flatten().map(CompletionCandidate::new))
         .collect()
 }
 
