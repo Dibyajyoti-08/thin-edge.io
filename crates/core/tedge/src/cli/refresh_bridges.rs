@@ -99,6 +99,8 @@ fn possible_clouds(config: &TEdgeConfig) -> impl Iterator<Item = CloudBorrow<'_>
     let iter = iter.chain(config.az_keys().map(CloudBorrow::az_borrowed));
     #[cfg(feature = "aws")]
     let iter = iter.chain(config.aws_keys().map(CloudBorrow::aws_borrowed));
+    #[cfg(feature = "tb")]
+    let iter = iter.chain(config.tb_keys().map(CloudBorrow::tb_borrowed));
 
     iter
 }
