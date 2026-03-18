@@ -231,6 +231,11 @@ pub struct AwsCloudMapperConfig {
     pub timestamp_format: TimeFormat,
 }
 
+pub struct TbMapperSpecificConfig {
+    pub timestamp: bool,
+    pub timestamp_format: TimeFormat,
+}
+
 /// Azure cloud-specific mapper configuration
 pub struct AzCloudMapperConfig {
     /// Whether to add timestamps to messages
