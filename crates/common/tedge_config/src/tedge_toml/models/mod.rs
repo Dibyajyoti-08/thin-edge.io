@@ -63,10 +63,11 @@ pub enum CloudType {
     C8y,
     Az,
     Aws,
+    Tb,
 }
 
 #[derive(thiserror::Error, Debug)]
-#[error("Failed to parse cloud type: {input}. Supported values are: 'c8y', 'az' or 'aws'")]
+#[error("Failed to parse cloud type: {input}. Supported values are: 'c8y', 'az', 'aws' or 'tb'")]
 pub struct InvalidCloudType {
     input: String,
 }
@@ -79,6 +80,7 @@ impl FromStr for CloudType {
             "c8y" => Ok(CloudType::C8y),
             "az" => Ok(CloudType::Az),
             "aws" => Ok(CloudType::Aws),
+            "tb" => Ok(CloudType::Tb),
             _ => Err(InvalidCloudType {
                 input: input.to_string(),
             }),
