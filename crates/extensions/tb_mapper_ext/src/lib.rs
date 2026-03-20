@@ -143,9 +143,9 @@ fn map_to_tb_topic(source: &str) -> Option<String> {
 /// Extracts the device name from a thin-edge topic.
 ///
 /// e.g. "te/device/child01///m/temperature" -> "child01"
-fn extract_device_name(topic: &str) -> &str {
-    topic.split('/').nth(2).unwrap_or("main")
-}
+// fn extract_device_name(topic: &str) -> &str {
+//     topic.split('/').nth(2).unwrap_or("main")
+// }
 
 #[derive(Clone, Default)]
 pub struct SetTbTopic {
@@ -230,9 +230,9 @@ mod tests {
         assert_eq!(topic, None);
     }
 
-    #[test]
-    fn test_extract_device_name() {
-        assert_eq!(extract_device_name("te/device/child01///m/temp"), "child01");
-        assert_eq!(extract_device_name("te/device/main///m/temp"), "main");
-    }
+    // #[test]
+    // fn test_extract_device_name() {
+    //     assert_eq!(extract_device_name("te/device/child01///m/temp"), "child01");
+    //     assert_eq!(extract_device_name("te/device/main///m/temp"), "main");
+    // }
 }

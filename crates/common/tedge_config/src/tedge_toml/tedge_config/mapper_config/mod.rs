@@ -249,7 +249,7 @@ pub struct AwsCloudMapperConfig {
     pub timestamp_format: TimeFormat,
 }
 
-pub struct TbMapperSpecificConfig {
+pub struct TbCloudMapperConfig {
     pub timestamp: bool,
     pub timestamp_format: TimeFormat,
 }
@@ -494,6 +494,11 @@ pub struct AzMapperSpecificConfig {
 /// AWS IoT-specific mapper configuration fields
 pub struct AwsMapperSpecificConfig {
     pub mapper: AwsCloudMapperConfig,
+}
+
+/// Tb IoT-specific mapper configuration fields
+pub struct TbMapperSpecificConfig {
+    pub mapper: TbCloudMapperConfig,
 }
 
 /// CloudConfig implementation for C8y
