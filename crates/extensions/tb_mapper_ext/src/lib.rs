@@ -29,13 +29,15 @@ pub struct TbConverter {
 
 impl TbConverter {
     pub fn new(
-        input_topics: String,
-        topic_prefix: TopicPrefix,
-        errors_topic: Topic,
-        size_threshold: usize,
         add_timestamp: bool,
+        mqtt_schema: &MqttSchema,
         time_format: TimeFormat,
+        topic_prefix: TopicPrefix,
+        max_payload_size: u32,
+        input_topics: String,
     ) -> Self {
+        let errors_topic = mqtt_schema.error_topic();
+        let size_threshold = max_payload_size as usize;
         TbConverter {
             input_topics,
             topic_prefix,
