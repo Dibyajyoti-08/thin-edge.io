@@ -14,6 +14,7 @@ use super::*;
 use crate::tedge_toml::tedge_config::TEdgeConfigReaderAws;
 use crate::tedge_toml::tedge_config::TEdgeConfigReaderAz;
 use crate::tedge_toml::tedge_config::TEdgeConfigReaderC8y;
+use crate::tedge_toml::tedge_config::TEdgeConfigReaderTb;
 use crate::tedge_toml::ReadableKey;
 use crate::TEdgeConfig;
 
@@ -214,6 +215,44 @@ impl FromCloudConfig for AwsMapperSpecificConfig {
                 timestamp: aws.mapper.timestamp,
                 timestamp_format: aws.mapper.timestamp_format,
             },
+        }
+    }
+}
+
+impl FromCloudConfig for TbMapperSpecificConfig {
+    type CloudConfigReader = TEdgeConfigReaderTb;
+
+    fn load_cloud_mapper_config(
+        profile: Option<&str>,
+        tedge_config: &TEdgeConfig,
+    ) -> Result<MapperConfig<Self>, MapperConfigError> {
+        let tb_config = tedge_config.tb.try_get(profile).map_err(|_| {
+            MapperConfigError::ConfigRead(format!(
+                "ThingsBoard profile '{}' not found",
+                profile.unwrap()
+            ))
+        })?;
+        let location = tedge_config
+            .dto
+            .tb
+            .try_get(profile, "tb")
+            .unwrap()
+            .mapper_config_file
+            .clone()
+            .unwrap_or_else(|| {
+                tedge_config
+                    .location
+                    .tedge_config_root_path()
+                    .join("tedge.toml")
+            });
+
+        build_mapper_config(tb_config.clone(), profile, location)
+    }
+
+    fn from_cloud_config(tb: &Self::CloudConfigReader, _profile: Option<&str>) -> Self {
+        TbMapperSpecificConfig {
+            timestamp: tb.mapper.timestamp,
+            timestamp_format: tb.mapper.timestamp_format,
         }
     }
 }
@@ -468,6 +507,66 @@ impl CloudConfigAccessor for TEdgeConfigReaderAws {
     }
 }
 
+impl CloudConfigAccessor for TEdgeConfigReaderTb {
+    fn url(&self) -> &OptionalConfig<ConnectUrl> {
+        &self.url
+    }
+
+    fn device_id_key(&self, profile: Option<&str>) -> ReadableKey {
+        ReadableKey::TbDeviceId(profile.map(<_>::to_owned))
+    }
+
+    fn device_id(&self) -> Result<String, ReadError> {
+        Ok(self.device.id()?.clone())
+    }
+
+    fn device_key_path(&self) -> &AbsolutePath {
+        &self.device.key_path
+    }
+
+    fn device_cert_path(&self) -> &AbsolutePath {
+        &self.device.cert_path
+    }
+
+    fn device_csr_path(&self) -> &AbsolutePath {
+        &self.device.csr_path
+    }
+
+    fn device_key_uri(&self) -> Option<Arc<str>> {
+        self.device.key_uri.or_none().cloned()
+    }
+
+    fn device_key_pin(&self) -> Option<Arc<str>> {
+        self.device.key_pin.or_none().cloned()
+    }
+
+    fn bridge_topic_prefix(&self, profile: Option<&str>) -> Keyed<TopicPrefix> {
+        Keyed::new(
+            self.bridge.topic_prefix.clone(),
+            ReadableKey::TbBridgeTopicPrefix(profile.map(<_>::to_owned)),
+        )
+    }
+
+    fn bridge_keepalive_interval(&self) -> &SecondsOrHumanTime {
+        &self.bridge.keepalive_interval
+    }
+
+    fn topics(&self) -> &TemplatesSet {
+        &self.topics
+    }
+
+    fn root_cert_path(&self, profile: Option<&str>) -> Keyed<AbsolutePath> {
+        Keyed::new(
+            self.root_cert_path.clone(),
+            ReadableKey::TbRootCertPath(profile.map(<_>::to_owned)),
+        )
+    }
+
+    fn max_payload_size(&self) -> MqttPayloadLimit {
+        self.mapper.mqtt.max_payload_size
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -568,6 +667,31 @@ mod tests {
         assert!(config.cloud_specific.mapper.timestamp);
         assert_eq!(
             config.cloud_specific.mapper.timestamp_format,
+            TimeFormat::Unix
+        );
+    }
+
+    #[test]
+    fn test_load_tb_config() {
+        let tedge_toml = r#"
+            [tb]
+            url = "mythingsboard.example.com"
+        "#;
+
+        let tedge_config = TEdgeConfig::from_dto(
+            toml::from_str(tedge_toml).unwrap(),
+            TEdgeConfigLocation::from_custom_root("/tmp/tedge"),
+        );
+
+        let config: TbMapperConfig = load_cloud_mapper_config(None, &tedge_config).unwrap();
+
+        assert_eq!(
+            config.url().or_none().unwrap().as_str(),
+            "mythingsboard.example.com"
+        );
+        assert!(config.cloud_specific.timestamp);
+        assert_eq!(
+            config.cloud_specific.timestamp_format,
             TimeFormat::Unix
         );
     }

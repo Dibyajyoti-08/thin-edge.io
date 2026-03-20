@@ -6,6 +6,7 @@ use crate::tedge_toml::ReadableKey;
 use crate::tedge_toml::TEdgeConfigDtoAws;
 use crate::tedge_toml::TEdgeConfigDtoAz;
 use crate::tedge_toml::TEdgeConfigDtoC8y;
+use crate::tedge_toml::TEdgeConfigDtoTb;
 use crate::TEdgeConfig;
 use crate::TEdgeConfigDto;
 use crate::TEdgeConfigReader;
@@ -155,6 +156,23 @@ impl HasPath for TEdgeConfigDtoC8y {
         Some(MapperConfigPath {
             base_dir: Cow::Borrowed(self.mapper_config_dir.as_deref()?),
             cloud_type: CloudType::C8y,
+        })
+    }
+
+    fn set_mapper_config_file(&mut self, path: Utf8PathBuf) {
+        self.mapper_config_file = Some(path)
+    }
+}
+
+impl HasPath for TEdgeConfigDtoTb {
+    fn set_mappers_root_dir(&mut self, path: Utf8PathBuf) {
+        self.mapper_config_dir = Some(path)
+    }
+
+    fn config_path(&self) -> Option<MapperConfigPath<'_>> {
+        Some(MapperConfigPath {
+            base_dir: Cow::Borrowed(self.mapper_config_dir.as_deref()?),
+            cloud_type: CloudType::Tb,
         })
     }
 
@@ -580,6 +598,40 @@ impl SpecialisedCloudConfig for AwsMapperSpecificConfig {
     }
 }
 
+/// CloudConfig implementation for ThingsBoard
+impl SpecialisedCloudConfig for TbMapperSpecificConfig {
+    type CloudDto = TEdgeConfigDtoTb;
+
+    fn into_config_reader(
+        dto: Self::CloudDto,
+        base_config: &TEdgeConfig,
+        profile: Option<&str>,
+    ) -> Self::CloudConfigReader {
+        let mut multi_dto = MultiDto::default();
+        match profile {
+            Some(profile) => {
+                multi_dto.profiles.insert(profile.parse().unwrap(), dto);
+            }
+            None => multi_dto.non_profile = dto,
+        };
+        let mut reader = TEdgeConfigReader::from_dto(
+            &TEdgeConfigDto {
+                tb: multi_dto,
+                ..base_config.dto.clone()
+            },
+            &base_config.location,
+        );
+        match profile {
+            None => reader.tb.non_profile,
+            Some(profile) => reader
+                .tb
+                .profiles
+                .remove(&profile.parse::<ProfileName>().unwrap())
+                .unwrap(),
+        }
+    }
+}
+
 /// Type alias for Cumulocity mapper configuration
 pub type C8yMapperConfig = MapperConfig<C8yMapperSpecificConfig>;
 
@@ -588,6 +640,8 @@ pub type AzMapperConfig = MapperConfig<AzMapperSpecificConfig>;
 
 /// Type alias for AWS IoT mapper configuration
 pub type AwsMapperConfig = MapperConfig<AwsMapperSpecificConfig>;
+
+pub type TbMapperConfig = MapperConfig<TbMapperSpecificConfig>;
 
 /// Error type for mapper configuration loading
 #[derive(Debug, thiserror::Error)]
@@ -639,6 +693,11 @@ impl ExpectedCloudType for AwsMapperSpecificConfig {
     }
 }
 
+impl ExpectedCloudType for TbMapperSpecificConfig {
+    fn expected_cloud_type() -> CloudType {
+        CloudType::Tb
+    }
+}
 pub trait HasUrl {
     // The configured URL field, used to check whether profiles are
     fn configured_url(&self) -> &OptionalConfig<ConnectUrl>;
@@ -685,6 +744,13 @@ impl MapperConfig<AzMapperSpecificConfig> {
 
 impl MapperConfig<AwsMapperSpecificConfig> {
     /// Get the cloud URL for AWS
+    pub fn url(&self) -> &OptionalConfig<ConnectUrl> {
+        &self.url
+    }
+}
+
+impl MapperConfig<TbMapperSpecificConfig> {
+    /// Get the cloud URL for ThingsBoard
     pub fn url(&self) -> &OptionalConfig<ConnectUrl> {
         &self.url
     }
