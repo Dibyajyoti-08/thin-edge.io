@@ -4756,6 +4756,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "tb_mapper_ext"
+version = "1.7.1"
+dependencies = [
+ "assert-json-diff",
+ "assert_matches",
+ "camino",
+ "serde",
+ "serde_json",
+ "tedge_api",
+ "tedge_config",
+ "tedge_flows",
+ "tedge_mqtt_ext",
+ "tedge_utils",
+ "tempfile",
+ "time",
+ "tokio",
+]
+
+[[package]]
 name = "tedge"
 version = "1.7.1"
 dependencies = [
@@ -4964,6 +4983,7 @@ dependencies = [
  "collectd_ext",
  "flockfile",
  "mqtt_channel",
+ "tb_mapper_ext",
  "tedge_actors",
  "tedge_api",
  "tedge_config",

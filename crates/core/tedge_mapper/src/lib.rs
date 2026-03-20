@@ -9,6 +9,8 @@ use crate::c8y::mapper::CumulocityMapper;
 use crate::collectd::mapper::CollectdMapper;
 use crate::core::component::TEdgeComponent;
 use crate::flows::GenMapper;
+#[cfg(feature = "tb")]
+use crate::tb::mapper::TbMapper;
 use anyhow::Context;
 use clap::Parser;
 use flockfile::check_another_instance_is_not_running;

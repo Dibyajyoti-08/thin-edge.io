@@ -278,6 +278,9 @@ impl TEdgeConfigLocation {
                 CloudType::Az => {
                     dto.az.non_profile.mapper_config_dir = Some(self.mappers_config_dir())
                 }
+                CloudType::Tb => {
+                    dto.tb.non_profile.mapper_config_dir = Some(self.mappers_config_dir())
+                }
             }
             Ok(())
         })
@@ -410,6 +413,7 @@ impl TEdgeConfigLocation {
         self.store_cloud(&mut config.c8y).await?;
         self.store_cloud(&mut config.az).await?;
         self.store_cloud(&mut config.aws).await?;
+        self.store_cloud(&mut config.tb).await?;
         self.store_in(self.toml_path(), &config, StoreEmptyConfig::Yes)
             .await
     }
