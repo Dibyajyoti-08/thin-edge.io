@@ -496,7 +496,7 @@ pub struct AwsMapperSpecificConfig {
     pub mapper: AwsCloudMapperConfig,
 }
 
-/// Tb IoT-specific mapper configuration fields
+/// ThingsBoard IoT-specific mapper configuration fields
 pub struct TbMapperSpecificConfig {
     pub mapper: TbCloudMapperConfig,
 }
