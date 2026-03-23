@@ -1,5 +1,6 @@
 use crate::core::component::TEdgeComponent;
 use crate::core::mapper::start_basic_actors;
+use crate::flows_config;
 use async_trait::async_trait;
 use mqtt_channel::Topic;
 use tb_mapper_ext::TbConverter;
@@ -59,18 +60,22 @@ impl TEdgeComponent for TbMapper {
         }
 
         let mqtt_schema = MqttSchema::with_root(tedge_config.mqtt.topic_root.clone());
-        let errors_topic = Topic::new_unchecked(&format!("te/errors/{tb_mapper_name}"));
+        // let errors_topic = Topic::new_unchecked(&format!("te/errors/{tb_mapper_name}"));
         let tb_converter = TbConverter::new(
             tb_config.cloud_specific.mapper.timestamp,
             &mqtt_schema,
             tb_config.cloud_specific.mapper.timestamp_format,
             prefix.value().clone(),
-            tb_config.mapper.mqtt_max_payloaod_size.0,
+            tb_config.mapper.mqtt.max_payload_size.0,
             tb_config.topics.to_string(),
         );
 
         // TODO: wire up the converter with the mqtt_actor and runtime
         // For now, just run the runtime
+        let flow_dir =
+            tedge_flows::flows_dir(config_dir, "tb", self.profile.as_ref().map(|p| p.as_ref()));
+        let flows = tb_converter.flow_registry(flow_dir).await?;
+        let service_config = flows_config(&tedge_config, &tb_mapper_name)?;
         runtime.spawn(mqtt_actor).await?;
         runtime.run_to_completion().await?;
         Ok(())
