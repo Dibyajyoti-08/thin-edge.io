@@ -182,6 +182,7 @@ fn extract_device_id_for_cloud(
         crate::cli::common::MaybeBorrowedCloud::Aws(_) => "aws",
         crate::cli::common::MaybeBorrowedCloud::Azure(_) => "az",
         crate::cli::common::MaybeBorrowedCloud::C8y(_) => "c8y",
+        crate::cli::common::MaybeBorrowedCloud::Tb(_) => "tb",
     });
 
     if let Some(cloud) = cloud {
