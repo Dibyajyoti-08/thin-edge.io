@@ -1,64 +1,32 @@
-use crate::bridge::config::BridgeConfig;
-use crate::bridge::BridgeLocation;
+use super::config::BridgeLocation;
+use super::config::ProxyWrapper;
+use super::BridgeConfig;
 use camino::Utf8PathBuf;
 use std::borrow::Cow;
+use std::time::Duration;
+use tedge_api::mqtt_topics::Channel;
+use tedge_api::mqtt_topics::EntityTopicId;
 use tedge_api::mqtt_topics::MqttSchema;
+use tedge_config::models::auth_method::AuthType;
 use tedge_config::models::HostPort;
 use tedge_config::models::TopicPrefix;
+use tedge_config::models::MQTT_TLS_PORT;
 use tedge_config::tedge_toml::ProfileName;
-use tedge_config::TEdgeConfig;
-
-const MQTT_TLS_PORT: u16 = 8883;
 
 #[derive(Debug)]
 pub struct BridgeConfigTbParams {
     pub mqtt_host: HostPort<MQTT_TLS_PORT>,
     pub config_file: Cow<'static, str>,
-    pub bridge_root_cert_path: Utf8PathBuf,
     pub remote_clientid: String,
+    pub bridge_root_cert_path: Utf8PathBuf,
     pub bridge_certfile: Utf8PathBuf,
     pub bridge_keyfile: Utf8PathBuf,
     pub bridge_location: BridgeLocation,
     pub topic_prefix: TopicPrefix,
     pub profile_name: Option<ProfileName>,
     pub mqtt_schema: MqttSchema,
-    pub keepalive_interval: std::time::Duration,
+    pub keepalive_interval: Duration,
     pub proxy: Option<rumqttc::Proxy>,
-}
-
-pub(crate) async fn check_device_status_tb(
-    tedge_config: &TEdgeConfig,
-    profile: Option<&ProfileName>,
-) -> Result<DeviceStatus, Fancy<ConnectError>> {
-    let tb_config = tedge_config.mapper_config::<TbMapperSpecificConfig>(&profile)?;
-
-    let topic = bridge_health_topic(&tb_config.bridge.topic_prefix, tedge_config);
-    let health_topic = topic.name.clone();
-
-    let mqtt_config = tedge_config
-        .mqtt_config()?
-        .with_no_session()
-        .with_subscriptions(topic.into());
-
-    let client = mqtt_channel::Connection::new(&mqtt_config)
-        .await
-        .map_err(|err| Fancy::from(ConnectError::ConnectionCheckError(err.to_string())))?;
-
-    let mut received = client.received;
-    tokio::time::timeout(RESPONSE_TIMEOUT, async {
-        while let Some(msg) = received.next().await {
-            if is_bridge_health_up_message(
-                &rumqttc::Publish::new(&msg.topic.name, rumqttc::QoS::AtLeastOnce, &msg.payload),
-                &health_topic,
-                tedge_config.mqtt.bridge.built_in,
-            ) {
-                return Ok(DeviceStatus::AlreadyExists);
-            }
-        }
-        Ok(DeviceStatus::Unknown)
-    })
-    .await
-    .unwrap_or(Ok(DeviceStatus::Unknown))
 }
 
 impl From<BridgeConfigTbParams> for BridgeConfig {
@@ -78,52 +46,35 @@ impl From<BridgeConfigTbParams> for BridgeConfig {
             proxy,
         } = params;
 
-        let address = mqtt_host.clone();
+        let user_name = remote_clientid.to_string();
 
-        // ThingsBoard MQTT topics
-        // Telemetry: v1/devices/me/telemetry
-        // Attributes: v1/devices/me/attributes
-        // RPC: v1/devices/me/rpc/request/+, v1/devices/me/rpc/response/+
-        let mut topics: Vec<String> = vec![
-            // Publish telemetry
-            format!("v1/devices/me/telemetry out 1 {topic_prefix}/ \"\""),
-            // Publish attributes
-            format!("v1/devices/me/attributes out 1 {topic_prefix}/ \"\""),
-            // Subscribe to attribute updates
-            format!("v1/devices/me/attributes in 1 {topic_prefix}/ \"\""),
-            // Subscribe to RPC requests
-            format!("v1/devices/me/rpc/request/+ in 1 {topic_prefix}/ \"\""),
-            // Publish RPC responses
-            format!("v1/devices/me/rpc/response/+ out 1 {topic_prefix}/ \"\""),
-        ];
+        // telemtry/command topics for use by the user
+        let pub_msg_topic = format!("td/# out 1 {topic_prefix}/ thinedge/{remote_clientid}/");
+        let sub_msg_topic = format!("cmd/# in 1 {topic_prefix}/ thinedge/{remote_clientid}/");
 
-        let health_topic = mqtt_schema.topic_for(
-            &tedge_api::EntityTopicId::default_main_device(),
-            &tedge_api::Channel::Health,
+        let service_name = format!("mosquitto-{topic_prefix}-bridge");
+        let health = mqtt_schema.topic_for(
+            &EntityTopicId::default_main_service(&service_name).unwrap(),
+            &Channel::Health,
         );
-
-        BridgeConfig {
-            cloud_name: "ThingsBoard".into(),
+        Self {
+            cloud_name: "tb".into(),
             config_file,
-            connection: format!(
-                "edge_to_tb{}",
-                profile_name
-                    .as_ref()
-                    .map(|p| format!("@{p}"))
-                    .unwrap_or_default()
-            ),
-            address,
-            remote_username: None,
+            connection: if let Some(profile) = &profile_name {
+                format!("edge_to_tb@{profile}")
+            } else {
+                "edge_to_tb".into()
+            },
+            address: mqtt_host,
+            remote_username: Some(user_name),
             remote_password: None,
             bridge_root_cert_path,
             remote_clientid,
-            local_clientid: format!(
-                "ThingsBoard{}",
-                profile_name
-                    .as_ref()
-                    .map(|p| format!("@{p}"))
-                    .unwrap_or_default()
-            ),
+            local_clientid: if let Some(profile) = &profile_name {
+                format!("edge_to_tb@{profile}")
+            } else {
+                "edge_to_tb".into()
+            },
             bridge_certfile,
             bridge_keyfile,
             use_mapper: true,
@@ -133,18 +84,141 @@ impl From<BridgeConfigTbParams> for BridgeConfig {
             clean_session: true,
             include_local_clean_session: false,
             local_clean_session: false,
-            notifications: false,
-            notifications_local_only: false,
-            notification_topic: "".into(),
+            notifications: true,
+            notifications_local_only: true,
+            notification_topic: health.name,
             bridge_attempt_unsubscribe: false,
-            topics,
+            topics: vec![pub_msg_topic, sub_msg_topic],
             bridge_location,
             connection_check_attempts: 2,
-            auth_type: tedge_config::models::auth_method::AuthType::Certificate,
+            auth_type: AuthType::Certificate,
             mosquitto_version: None,
             keepalive_interval,
-            proxy,
-            health_topic: health_topic.name,
+            proxy: proxy.map(ProxyWrapper),
         }
     }
+}
+
+#[test]
+fn test_bridge_config_from_tb_params() -> anyhow::Result<()> {
+    let params = BridgeConfigTbParams {
+        mqtt_host: HostPort::<MQTT_TLS_PORT>::try_from("tb.example.com")?,
+        config_file: "tb-bridge.conf".into(),
+        remote_clientid: "alpha".into(),
+        bridge_root_cert_path: "./test_root.pem".into(),
+        bridge_certfile: "./test-certificate.pem".into(),
+        bridge_keyfile: "./test-private-key.pem".into(),
+        bridge_location: BridgeLocation::Mosquitto,
+        topic_prefix: "tb".try_into().unwrap(),
+        profile_name: Some("profile".parse().unwrap()),
+        mqtt_schema: MqttSchema::with_root("te".into()),
+        keepalive_interval: Duration::from_secs(60),
+        proxy: None,
+    };
+    let bridge = BridgeConfig::from(params);
+
+    let expected = BridgeConfig {
+        cloud_name: "tb".into(),
+        config_file: "tb-bridge.conf".into(),
+        connection: "edge_to_tb".into(),
+        address: HostPort::<MQTT_TLS_PORT>::try_from("tb.example.com")?,
+        remote_username: Some("alpha".into()),
+        remote_password: None,
+        bridge_root_cert_path: Utf8PathBuf::from("./test_root.pem"),
+        remote_clientid: "alpha".into(),
+        local_clientid: "ThingsBoard".into(),
+        bridge_certfile: "./test-certificate.pem".into(),
+        bridge_keyfile: "./test-private-key.pem".into(),
+        use_mapper: true,
+        use_agent: false,
+        try_private: false,
+        start_type: "automatic".into(),
+        clean_session: false,
+        include_local_clean_session: false,
+        local_clean_session: false,
+        notifications: true,
+        notifications_local_only: true,
+        notification_topic: "te/device/main/service/mosquitto-tb-bridge/status/health".into(),
+        bridge_attempt_unsubscribe: false,
+        topics: vec![
+            "td/# out 1 tb/ thinedge/alpha/".into(),
+            "cmd/# in 1 tb/ thinedge/alpha/".into(),
+        ],
+        bridge_location: BridgeLocation::Mosquitto,
+        connection_check_attempts: 2,
+        auth_type: AuthType::Certificate,
+        mosquitto_version: None,
+        keepalive_interval: Duration::from_secs(60),
+        proxy: None,
+    };
+
+    assert_eq!(bridge, expected);
+
+    Ok(())
+}
+
+#[test]
+fn test_bridge_config_tb_custom_topic_prefix() -> anyhow::Result<()> {
+    let params = BridgeConfigTbParams {
+        mqtt_host: HostPort::<MQTT_TLS_PORT>::try_from("tb.example.com")?,
+        config_file: "tb-bridge.conf".into(),
+        remote_clientid: "alpha".into(),
+        bridge_root_cert_path: "./test_root.pem".into(),
+        bridge_certfile: "./test-certificate.pem".into(),
+        bridge_keyfile: "./test-private-key.pem".into(),
+        bridge_location: BridgeLocation::Mosquitto,
+        topic_prefix: "tb-custom".try_into().unwrap(),
+        profile_name: Some("profile".parse().unwrap()),
+        mqtt_schema: MqttSchema::with_root("te".into()),
+        keepalive_interval: Duration::from_secs(60),
+        proxy: None,
+    };
+    let bridge = BridgeConfig::from(params);
+
+    let expected = BridgeConfig {
+        cloud_name: "tb".into(),
+        config_file: "tb-bridge.conf".into(),
+        connection: "edge_to_tb@profile".into(),
+        address: HostPort::<MQTT_TLS_PORT>::try_from("tb.example.com")?,
+        remote_username: Some("alpha".into()),
+        remote_password: None,
+        bridge_root_cert_path: Utf8PathBuf::from("./test_root.pem"),
+        remote_clientid: "alpha".into(),
+        local_clientid: "ThingsBoard@profile".into(),
+        bridge_certfile: "./test-certificate.pem".into(),
+        bridge_keyfile: "./test-private-key.pem".into(),
+        use_mapper: true,
+        use_agent: false,
+        topics: vec![
+            // Publish telemetry
+            "v1/devices/me/telemetry out 1 {topic_prefix}/".into(),
+            // Publish attributes
+            "v1/devices/me/attributes out 1 {topic_prefix}/".into(),
+            // Subscribe to attribute updates
+            "v1/devices/me/attributes in 1 {topic_prefix}/".into(),
+            // Subscribe to RPC requests
+            "v1/devices/me/rpc/request/+ in 1 {topic_prefix}/".into(),
+            // Publish RPC responses
+            "v1/devices/me/rpc/response/+ out 1 {topic_prefix}/".into(),
+        ],
+        try_private: false,
+        start_type: "automatic".into(),
+        clean_session: true,
+        include_local_clean_session: false,
+        local_clean_session: false,
+        notifications: true,
+        notifications_local_only: true,
+        notification_topic: "te/device/main/service/mosquitto-tb-bridge/status/health".into(),
+        bridge_attempt_unsubscribe: false,
+        bridge_location: BridgeLocation::Mosquitto,
+        connection_check_attempts: 2,
+        auth_type: AuthType::Certificate,
+        mosquitto_version: None,
+        keepalive_interval: Duration::from_secs(60),
+        proxy: None,
+    };
+
+    assert_eq!(bridge, expected);
+
+    Ok(())
 }
