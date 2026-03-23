@@ -38,6 +38,8 @@ pub fn cloud_name(cloud: &MaybeBorrowedCloud<'_>) -> &'static str {
         MaybeBorrowedCloud::Aws { .. } => "AWS",
         #[cfg(feature = "azure")]
         MaybeBorrowedCloud::Azure { .. } => "Azure",
+        #[cfg(feature = "tb")]
+        MaybeBorrowedCloud::Tb { .. } => "ThingsBoard",
     }
 }
 
