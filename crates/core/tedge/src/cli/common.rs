@@ -225,7 +225,7 @@ impl MaybeBorrowedCloud<'_> {
             #[cfg(feature = "tb")]
             Self::Tb(None) => "tb-bridge.conf".into(),
             #[cfg(feature = "tb")]
-            Self::Tb(Some(profile)) => format!("tb@{profile}-bridge.conf").into,
+            Self::Tb(Some(profile)) => format!("tb@{profile}-bridge.conf").into(),
         }
     }
 
