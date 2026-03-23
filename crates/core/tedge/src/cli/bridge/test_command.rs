@@ -64,6 +64,17 @@ enum CloudTopicArg {
         /// The MQTT topic to test (local or remote, wildcards are not supported)
         topic: String,
     },
+    #[cfg(feature = "tb")]
+    Tb {
+        /// The cloud profile you wish to use
+        ///
+        /// [env: TEDGE_CLOUD_PROFILE]
+        #[clap(long)]
+        profile: Option<ProfileName>,
+
+        /// The MQTT topic to test (local or remote, wildcards are not supported)
+        topic: String,
+    },
 }
 
 impl CloudTopicArg {
@@ -81,6 +92,10 @@ impl CloudTopicArg {
             Self::Az { profile, .. } => CloudArg::Az {
                 profile: profile.clone(),
             },
+            #[cfg(feature = "tb")]
+            Self::Tb { profile, .. } => CloudArg::Tb {
+                profile: profile.clone(),
+            },
         }
     }
 
@@ -92,6 +107,8 @@ impl CloudTopicArg {
             Self::Aws { topic, .. } => topic,
             #[cfg(feature = "azure")]
             Self::Az { topic, .. } => topic,
+            #[cfg(feature = "tb")]
+            Self::Tb { topic, .. } => topic,
         }
     }
 }
@@ -159,6 +176,11 @@ async fn run_test(
         }
         #[cfg(feature = "azure")]
         CloudArg::Az { .. } => {
+            print_non_configurable_or_disabled(w, config, &cloud);
+            Ok(Status::NoMatches)
+        }
+        #[cfg(feature = "tb")]
+        CloudArg::Tb { .. } => {
             print_non_configurable_or_disabled(w, config, &cloud);
             Ok(Status::NoMatches)
         }
