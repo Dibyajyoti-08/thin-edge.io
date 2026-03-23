@@ -251,8 +251,10 @@ impl FromCloudConfig for TbMapperSpecificConfig {
 
     fn from_cloud_config(tb: &Self::CloudConfigReader, _profile: Option<&str>) -> Self {
         TbMapperSpecificConfig {
-            timestamp: tb.mapper.timestamp,
-            timestamp_format: tb.mapper.timestamp_format,
+            mapper: TbCloudMapperConfig {
+                timestamp: tb.mapper.timestamp,
+                timestamp_format: tb.mapper.timestamp_format,
+            },
         }
     }
 }
@@ -690,10 +692,7 @@ mod tests {
             "mythingsboard.example.com"
         );
         assert!(config.cloud_specific.timestamp);
-        assert_eq!(
-            config.cloud_specific.timestamp_format,
-            TimeFormat::Unix
-        );
+        assert_eq!(config.cloud_specific.timestamp_format, TimeFormat::Unix);
     }
 
     #[test]
