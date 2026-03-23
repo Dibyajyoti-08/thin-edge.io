@@ -77,6 +77,10 @@ async fn run_inspect(
         CloudArg::Az { .. } => {
             print_non_configurable_or_disabled(w, config, &cloud);
         }
+        #[cfg(feature = "tb")]
+        CloudArg::Tb { .. } => {
+            print_non_configurable_or_disabled(w, config, &cloud);
+        }
     }
 
     Ok(())
