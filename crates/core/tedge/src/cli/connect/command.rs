@@ -231,6 +231,20 @@ impl ConnectCommand {
     ) -> Result<(), Fancy<ConnectError>> {
         let updated_mosquitto_config = CommonMosquittoConfig::from_tedge_config(tedge_config);
 
+        // Provision the device with ThingsBoard (X.509 provisioning) if
+        // tb.device.provision_key (and provision_secret) are configured.
+        // If provision_key is absent the call returns Ok(()) immediately.
+        #[cfg(feature = "tb")]
+        if let Cloud::Tb(profile) = &self.cloud {
+            if !self.offline_mode {
+                let spinner = Spinner::start("Provisioning device with ThingsBoard");
+                let res = tb::provision_device_tb(tedge_config, profile.as_deref()).await;
+                spinner
+                    .finish(res)
+                    .map_err(|e: Fancy<anyhow::Error>| -> Fancy<ConnectError> { e.into() })?;
+            }
+        }
+
         match self
             .new_bridge(tedge_config, bridge_config, &updated_mosquitto_config)
             .await
