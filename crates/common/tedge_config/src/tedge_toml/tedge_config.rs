@@ -511,6 +511,9 @@ define_tedge_config! {
         #[tedge_config(example = "123456", example = "my-pin")]
         key_pin: Arc<str>,
 
+        #[tedge_config(example = "YOUR_ACCESS_TOKEN")]
+            secret: String,
+
         cryptoki: {
             /// Whether to use a Hardware Security Module for authenticating the MQTT connection with the cloud.
             ///
@@ -1093,6 +1096,14 @@ define_tedge_config! {
             /// ThingsBoard device access token for token-based authentication
             #[tedge_config(example = "YOUR_ACCESS_TOKEN")]
             secret: String,
+
+            /// ThingsBoard provision key for device provisioning
+            #[tedge_config(example = "YOUR_PROVISION_KEY")]
+            provision_key: String,
+
+            /// ThingsBoard provision secret for device provisioning
+            #[tedge_config(example = "YOUR_PROVISION_SECRET")]
+            provision_secret: String,
         },
 
         mapper: {
