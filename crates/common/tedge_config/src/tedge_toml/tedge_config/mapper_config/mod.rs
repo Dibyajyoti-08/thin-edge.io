@@ -499,6 +499,10 @@ pub struct AwsMapperSpecificConfig {
 /// ThingsBoard IoT-specific mapper configuration fields
 pub struct TbMapperSpecificConfig {
     pub mapper: TbCloudMapperConfig,
+    /// ThingsBoard provision key for X.509 device provisioning (optional)
+    pub provision_key: Option<String>,
+    /// ThingsBoard provision secret for X.509 device provisioning (optional)
+    pub provision_secret: Option<String>,
 }
 
 /// CloudConfig implementation for C8y
