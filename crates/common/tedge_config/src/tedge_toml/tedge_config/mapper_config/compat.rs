@@ -255,6 +255,8 @@ impl FromCloudConfig for TbMapperSpecificConfig {
                 timestamp: tb.mapper.timestamp,
                 timestamp_format: tb.mapper.timestamp_format,
             },
+            provision_key: tb.device.provision_key.or_none().cloned(),
+            provision_secret: tb.device.provision_secret.or_none().cloned(),
         }
     }
 }
@@ -691,8 +693,11 @@ mod tests {
             config.url().or_none().unwrap().as_str(),
             "mythingsboard.example.com"
         );
-        assert!(config.cloud_specific.timestamp);
-        assert_eq!(config.cloud_specific.timestamp_format, TimeFormat::Unix);
+        assert!(config.cloud_specific.mapper.timestamp);
+        assert_eq!(
+            config.cloud_specific.mapper.timestamp_format,
+            TimeFormat::Unix
+        );
     }
 
     #[test]
