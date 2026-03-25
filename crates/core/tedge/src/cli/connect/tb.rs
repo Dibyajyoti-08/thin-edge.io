@@ -24,18 +24,122 @@ pub async fn check_device_status_tb(
 ) -> Result<DeviceStatus, ConnectError> {
     let tb_config = tedge_config.mapper_config::<TbMapperSpecificConfig>(&profile)?;
     let topic_prefix = &tb_config.bridge.topic_prefix;
-    let tb_topic_pub_check_connection = format!("{topic_prefix}/test-connection");
-    let tb_topic_sub_check_connection = format!("{topic_prefix}/connection-success");
+    // let tb_topic_pub_check_connection = format!("{topic_prefix}/test-connection");
+    // let tb_topic_sub_check_connection = format!("{topic_prefix}/connection-success");
+    // let built_in_bridge_health = bridge_health_topic(topic_prefix, tedge_config).name;
+    // const CLIENT_ID: &str = "check_connection_tb";
+    // // const REGISTRATION_PAYLOAD: &[u8] = b"";
+
+    // // DEBUG: print mqtt config details
+    // eprintln!("=== CHECK CONNECTION DEBUG ===");
+    // eprintln!("MQTT host: {}", tedge_config.mqtt.client.host);
+    // eprintln!("MQTT port: {}", tedge_config.mqtt.client.port);
+    // eprintln!("Built-in bridge: {}", tedge_config.mqtt.bridge.built_in);
+    // eprintln!("Topic prefix: {}", topic_prefix);
+    // // eprintln!("Publish topic: {}", tb_topic_pub_check_connection);
+    // // eprintln!("Subscribe topic: {}", tb_topic_sub_check_connection);
+    // eprintln!("Bridge health topic: {}", built_in_bridge_health);
+    // eprintln!("==============================");
+
+    // let mut mqtt_options = tedge_config
+    //     .mqtt_config()?
+    //     .with_session_prefix(CLIENT_ID)
+    //     .rumqttc_options()?;
+    // mqtt_options.set_keep_alive(RESPONSE_TIMEOUT);
+
+    // let (client, mut event_loop) = rumqttc::AsyncClient::new(mqtt_options, 10);
+    // // let mut acknowledged = false;
+
+    // if tedge_config.mqtt.bridge.built_in {
+    //     client
+    //         .subscribe(&built_in_bridge_health, AtLeastOnce)
+    //         .await?;
+    // }
+    // client
+    //     .subscribe(&tb_topic_sub_check_connection, AtLeastOnce)
+    //     .await?;
+
+    // let mut err = None;
+    // loop {
+    //     match event_loop.poll().await {
+    //         Ok(Event::Incoming(Packet::SubAck(_))) => {
+    //             // We are ready to get the response, hence send the request
+    //             client
+    //                 .publish(
+    //                     &tb_topic_pub_check_connection,
+    //                     AtLeastOnce,
+    //                     false,
+    //                     REGISTRATION_PAYLOAD,
+    //                 )
+    //                 .await?;
+    //         }
+    //         Ok(Event::Incoming(Packet::PubAck(_))) => {
+    //             // The request has been sent
+    //             acknowledged = true;
+    //         }
+    //         Ok(Event::Incoming(Packet::Publish(response))) => {
+    //             if response.topic == tb_topic_sub_check_connection {
+    //                 // We got a response
+    //                 break;
+    //             } else if is_bridge_health_up_message(
+    //                 &response,
+    //                 &built_in_bridge_health,
+    //                 tedge_config.mqtt.bridge.built_in,
+    //             ) {
+    //                 // Built in bridge is now up, republish the message in case it was never received by the bridge
+    //                 client
+    //                     .publish(
+    //                         &tb_topic_pub_check_connection,
+    //                         AtLeastOnce,
+    //                         false,
+    //                         REGISTRATION_PAYLOAD,
+    //                     )
+    //                     .await?;
+    //             }
+    //         }
+    //         Ok(Event::Outgoing(Outgoing::PingReq)) => {
+    //             // No messages have been received for a while
+    //             err = Some(if acknowledged {
+    //                 anyhow!("Didn't receive a response from ThingsBoard")
+    //             } else {
+    //                 anyhow!("Local MQTT publish has timed out")
+    //             });
+    //             break;
+    //         }
+    //         Ok(Event::Incoming(Incoming::Disconnect)) => {
+    //             err = Some(anyhow!(
+    //                 "Client was disconnected from mosquitto during connection check"
+    //             ));
+    //             break;
+    //         }
+    //         Err(e) => {
+    //             err = Some(
+    //                 anyhow::Error::from(e)
+    //                     .context("Failed to connect to mosquitto for connection check"),
+    //             );
+    //             break;
+    //         }
+    //         _ => {}
+    //     }
+    // }
+
+    // // Cleanly disconnect client
+    // client.disconnect().await?;
+    // loop {
+    //     match event_loop.poll().await {
+    //         Ok(Event::Outgoing(Outgoing::Disconnect)) | Err(_) => break,
+    //         _ => {}
+    //     }
+    // }
     let built_in_bridge_health = bridge_health_topic(topic_prefix, tedge_config).name;
     const CLIENT_ID: &str = "check_connection_tb";
-    const REGISTRATION_PAYLOAD: &[u8] = b"";
 
-    // DEBUG: print mqtt config details
     eprintln!("=== CHECK CONNECTION DEBUG ===");
     eprintln!("MQTT host: {}", tedge_config.mqtt.client.host);
     eprintln!("MQTT port: {}", tedge_config.mqtt.client.port);
     eprintln!("Built-in bridge: {}", tedge_config.mqtt.bridge.built_in);
     eprintln!("Topic prefix: {}", topic_prefix);
+    eprintln!("Bridge health topic: {}", built_in_bridge_health);
     eprintln!("==============================");
 
     let mut mqtt_options = tedge_config
@@ -45,62 +149,37 @@ pub async fn check_device_status_tb(
     mqtt_options.set_keep_alive(RESPONSE_TIMEOUT);
 
     let (client, mut event_loop) = rumqttc::AsyncClient::new(mqtt_options, 10);
-    let mut acknowledged = false;
 
-    if tedge_config.mqtt.bridge.built_in {
-        client
-            .subscribe(&built_in_bridge_health, AtLeastOnce)
-            .await?;
-    }
+    // Only subscribe to bridge health topic.
+    // Mosquitto publishes {"status":"up"} here automatically when
+    // the bridge connection to ThingsBoard is established.
+    // No need to publish/subscribe to tb/test-connection or tb/connection-success.
     client
-        .subscribe(&tb_topic_sub_check_connection, AtLeastOnce)
+        .subscribe(&built_in_bridge_health, AtLeastOnce)
         .await?;
 
     let mut err = None;
     loop {
         match event_loop.poll().await {
-            Ok(Event::Incoming(Packet::SubAck(_))) => {
-                // We are ready to get the response, hence send the request
-                client
-                    .publish(
-                        &tb_topic_pub_check_connection,
-                        AtLeastOnce,
-                        false,
-                        REGISTRATION_PAYLOAD,
-                    )
-                    .await?;
-            }
-            Ok(Event::Incoming(Packet::PubAck(_))) => {
-                // The request has been sent
-                acknowledged = true;
-            }
             Ok(Event::Incoming(Packet::Publish(response))) => {
-                if response.topic == tb_topic_sub_check_connection {
-                    // We got a response
-                    break;
-                } else if is_bridge_health_up_message(
+                eprintln!(
+                    "Received on [{}]: {}",
+                    response.topic,
+                    String::from_utf8_lossy(&response.payload)
+                );
+                // is_bridge_health_up_message checks if payload contains "up"
+                if is_bridge_health_up_message(
                     &response,
                     &built_in_bridge_health,
                     tedge_config.mqtt.bridge.built_in,
                 ) {
-                    // Built in bridge is now up, republish the message in case it was never received by the bridge
-                    client
-                        .publish(
-                            &tb_topic_pub_check_connection,
-                            AtLeastOnce,
-                            false,
-                            REGISTRATION_PAYLOAD,
-                        )
-                        .await?;
+                    eprintln!("Bridge is UP - ThingsBoard connected!");
+                    break; // success
                 }
             }
             Ok(Event::Outgoing(Outgoing::PingReq)) => {
-                // No messages have been received for a while
-                err = Some(if acknowledged {
-                    anyhow!("Didn't receive a response from ThingsBoard")
-                } else {
-                    anyhow!("Local MQTT publish has timed out")
-                });
+                // Timeout — no bridge health message received
+                err = Some(anyhow!("Didn't receive a response from ThingsBoard"));
                 break;
             }
             Ok(Event::Incoming(Incoming::Disconnect)) => {
@@ -131,10 +210,6 @@ pub async fn check_device_status_tb(
 
     match err {
         None => Ok(DeviceStatus::AlreadyExists),
-        // In Cumulocity we connect directly first to create a device so we know we can connect so
-        // we return `DeviceStatus::Unknown` when we can't check its status, but here we can fail to
-        // even connect because we're connecting through the bridge and haven't connected directly
-        // prior
         Some(err) => Err(err
             .context("Failed to verify device is connected to ThingsBoard")
             .into()),
