@@ -191,22 +191,36 @@ pub async fn provision_device_tb(
         "provisionDeviceSecret": provision_secret,
         "credentialsType": "X509_CERTIFICATE",
         "deviceName": device_name,
-        "hash": cert_pem,
+        "hash": cert_hash,
     });
+
+    // // DEBUG: Print the exact payload being sent
+    // eprintln!("=== DEBUG PROVISIONING PAYLOAD ===");
+    // eprintln!("Device name: {}", device_name);
+    // eprintln!("Provision key: {}", provision_key);
+    // eprintln!(
+    //     "Cert hash (first 40 chars): {}...",
+    //     &cert_hash[..40.min(cert_hash.len())]
+    // );
+    // eprintln!("Cert hash length: {}", cert_hash.len());
+    // eprintln!(
+    //     "Full payload: {}",
+    //     serde_json::to_string_pretty(&payload).unwrap()
+    // );
+    // eprintln!("==================================");
+
     let payload_bytes = serde_json::to_vec(&payload)
         .map_err(|e| anyhow!("Failed to serialize provisioning request: {}", e))?;
 
     // Connect directly to ThingsBoard (not via local bridge) using username "provision"
     const TB_PROVISION_PORT: u16 = 8883;
-    let mut mqtt_options =
-        MqttOptions::new("tedge_tb_provision", &tb_host, TB_PROVISION_PORT);
+    let mut mqtt_options = MqttOptions::new("tedge_tb_provision", &tb_host, TB_PROVISION_PORT);
     mqtt_options.set_credentials("provision", "");
     mqtt_options.set_keep_alive(RESPONSE_TIMEOUT);
 
     // TLS: use the configured TB root certificate path (no client cert for provisioning)
-    let tls_config =
-        create_tls_config_without_client_cert(tb_config.root_cert_path.as_std_path())
-            .map_err(|e| anyhow!("Failed to build TLS configuration for provisioning: {}", e))?;
+    let tls_config = create_tls_config_without_client_cert(tb_config.root_cert_path.as_std_path())
+        .map_err(|e| anyhow!("Failed to build TLS configuration for provisioning: {}", e))?;
     mqtt_options.set_transport(Transport::tls_with_config(
         TlsConfiguration::Rustls(Arc::new(tls_config)).into(),
     ));
@@ -289,9 +303,7 @@ pub async fn provision_device_tb(
                 break;
             }
             Ok(Event::Incoming(Incoming::Disconnect)) => {
-                err = Some(anyhow!(
-                    "Disconnected from ThingsBoard during provisioning"
-                ));
+                err = Some(anyhow!("Disconnected from ThingsBoard during provisioning"));
                 break;
             }
             Err(e) => {
@@ -317,6 +329,8 @@ pub async fn provision_device_tb(
     match (provisioned, err) {
         (true, _) => Ok(()),
         (false, Some(e)) => Err(e.context("ThingsBoard device provisioning failed")),
-        (false, None) => Err(anyhow!("Provisioning ended without a response from ThingsBoard")),
+        (false, None) => Err(anyhow!(
+            "Provisioning ended without a response from ThingsBoard"
+        )),
     }
 }
