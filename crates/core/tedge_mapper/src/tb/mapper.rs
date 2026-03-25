@@ -9,8 +9,11 @@ use tedge_config::models::TopicPrefix;
 use tedge_config::tedge_toml::mapper_config::TbMapperSpecificConfig;
 use tedge_config::tedge_toml::ProfileName;
 use tedge_config::TEdgeConfig;
+use tedge_file_system_ext::FsWatchActorBuilder;
+use tedge_flows::FlowsMapperBuilder;
 use tedge_mqtt_bridge::BridgeConfig;
 use tedge_mqtt_bridge::MqttBridgeActorBuilder;
+use tedge_watch_ext::WatchActorBuilder;
 
 pub struct TbMapper {
     pub profile: Option<ProfileName>,
@@ -61,21 +64,39 @@ impl TEdgeComponent for TbMapper {
 
         let mqtt_schema = MqttSchema::with_root(tedge_config.mqtt.topic_root.clone());
         // let errors_topic = Topic::new_unchecked(&format!("te/errors/{tb_mapper_name}"));
+        let input_topics = {
+            let configured = tb_config.topics.to_string();
+            if configured.is_empty() || configured == "[]" {
+                r#"["te/+/+/+/+/m/+", "te/+/+/+/+/e/+", "te/+/+/+/+/a/+", "te/+/+/+/+/twin/+", "te/+/+/+/+/status/health"]"#.to_string()
+            } else {
+                configured
+            }
+        };
         let tb_converter = TbConverter::new(
             tb_config.cloud_specific.mapper.timestamp,
             &mqtt_schema,
             tb_config.cloud_specific.mapper.timestamp_format,
             prefix.value().clone(),
             tb_config.mapper.mqtt.max_payload_size.0,
-            tb_config.topics.to_string(),
+            // tb_config.topics.to_string(),
+            input_topics,
         );
 
-        // TODO: wire up the converter with the mqtt_actor and runtime
-        // For now, just run the runtime
         let flow_dir =
             tedge_flows::flows_dir(config_dir, "tb", self.profile.as_ref().map(|p| p.as_ref()));
         let flows = tb_converter.flow_registry(flow_dir).await?;
         let service_config = flows_config(&tedge_config, &tb_mapper_name)?;
+        let mut fs_actor = FsWatchActorBuilder::new();
+        let mut cmd_watcher_actor = WatchActorBuilder::new();
+        let mut flows_mapper =
+            tedge_flows::FlowsMapperBuilder::try_new(flows, service_config).await?;
+        flows_mapper.connect(&mut mqtt_actor);
+        flows_mapper.connect_fs(&mut fs_actor);
+        flows_mapper.connect_cmd(&mut cmd_watcher_actor);
+
+        runtime.spawn(flows_mapper).await?;
+        runtime.spawn(fs_actor).await?;
+        runtime.spawn(cmd_watcher_actor).await?;
         runtime.spawn(mqtt_actor).await?;
         runtime.run_to_completion().await?;
         Ok(())
