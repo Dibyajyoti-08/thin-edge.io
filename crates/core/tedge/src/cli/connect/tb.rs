@@ -30,6 +30,14 @@ pub async fn check_device_status_tb(
     const CLIENT_ID: &str = "check_connection_tb";
     const REGISTRATION_PAYLOAD: &[u8] = b"";
 
+    // DEBUG: print mqtt config details
+    eprintln!("=== CHECK CONNECTION DEBUG ===");
+    eprintln!("MQTT host: {}", tedge_config.mqtt.client.host);
+    eprintln!("MQTT port: {}", tedge_config.mqtt.client.port);
+    eprintln!("Built-in bridge: {}", tedge_config.mqtt.bridge.built_in);
+    eprintln!("Topic prefix: {}", topic_prefix);
+    eprintln!("==============================");
+
     let mut mqtt_options = tedge_config
         .mqtt_config()?
         .with_session_prefix(CLIENT_ID)

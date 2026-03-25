@@ -1,0 +1,15 @@
+[Unit]
+Description=tedge-mapper-tb checks Thin Edge JSON measurements and forwards to ThingsBoard.
+After=syslog.target network.target mosquitto.service
+PartOf=tedge-mapper-tb.target
+
+[Service]
+User=root
+ExecStartPre=+-/usr/bin/tedge init
+ExecStart=/usr/bin/tedge-mapper tb --profile %i
+Restart=on-failure
+RestartPreventExitStatus=255
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
