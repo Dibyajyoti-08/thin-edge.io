@@ -24,123 +24,8 @@ pub async fn check_device_status_tb(
 ) -> Result<DeviceStatus, ConnectError> {
     let tb_config = tedge_config.mapper_config::<TbMapperSpecificConfig>(&profile)?;
     let topic_prefix = &tb_config.bridge.topic_prefix;
-    // let tb_topic_pub_check_connection = format!("{topic_prefix}/test-connection");
-    // let tb_topic_sub_check_connection = format!("{topic_prefix}/connection-success");
-    // let built_in_bridge_health = bridge_health_topic(topic_prefix, tedge_config).name;
-    // const CLIENT_ID: &str = "check_connection_tb";
-    // // const REGISTRATION_PAYLOAD: &[u8] = b"";
-
-    // // DEBUG: print mqtt config details
-    // eprintln!("=== CHECK CONNECTION DEBUG ===");
-    // eprintln!("MQTT host: {}", tedge_config.mqtt.client.host);
-    // eprintln!("MQTT port: {}", tedge_config.mqtt.client.port);
-    // eprintln!("Built-in bridge: {}", tedge_config.mqtt.bridge.built_in);
-    // eprintln!("Topic prefix: {}", topic_prefix);
-    // // eprintln!("Publish topic: {}", tb_topic_pub_check_connection);
-    // // eprintln!("Subscribe topic: {}", tb_topic_sub_check_connection);
-    // eprintln!("Bridge health topic: {}", built_in_bridge_health);
-    // eprintln!("==============================");
-
-    // let mut mqtt_options = tedge_config
-    //     .mqtt_config()?
-    //     .with_session_prefix(CLIENT_ID)
-    //     .rumqttc_options()?;
-    // mqtt_options.set_keep_alive(RESPONSE_TIMEOUT);
-
-    // let (client, mut event_loop) = rumqttc::AsyncClient::new(mqtt_options, 10);
-    // // let mut acknowledged = false;
-
-    // if tedge_config.mqtt.bridge.built_in {
-    //     client
-    //         .subscribe(&built_in_bridge_health, AtLeastOnce)
-    //         .await?;
-    // }
-    // client
-    //     .subscribe(&tb_topic_sub_check_connection, AtLeastOnce)
-    //     .await?;
-
-    // let mut err = None;
-    // loop {
-    //     match event_loop.poll().await {
-    //         Ok(Event::Incoming(Packet::SubAck(_))) => {
-    //             // We are ready to get the response, hence send the request
-    //             client
-    //                 .publish(
-    //                     &tb_topic_pub_check_connection,
-    //                     AtLeastOnce,
-    //                     false,
-    //                     REGISTRATION_PAYLOAD,
-    //                 )
-    //                 .await?;
-    //         }
-    //         Ok(Event::Incoming(Packet::PubAck(_))) => {
-    //             // The request has been sent
-    //             acknowledged = true;
-    //         }
-    //         Ok(Event::Incoming(Packet::Publish(response))) => {
-    //             if response.topic == tb_topic_sub_check_connection {
-    //                 // We got a response
-    //                 break;
-    //             } else if is_bridge_health_up_message(
-    //                 &response,
-    //                 &built_in_bridge_health,
-    //                 tedge_config.mqtt.bridge.built_in,
-    //             ) {
-    //                 // Built in bridge is now up, republish the message in case it was never received by the bridge
-    //                 client
-    //                     .publish(
-    //                         &tb_topic_pub_check_connection,
-    //                         AtLeastOnce,
-    //                         false,
-    //                         REGISTRATION_PAYLOAD,
-    //                     )
-    //                     .await?;
-    //             }
-    //         }
-    //         Ok(Event::Outgoing(Outgoing::PingReq)) => {
-    //             // No messages have been received for a while
-    //             err = Some(if acknowledged {
-    //                 anyhow!("Didn't receive a response from ThingsBoard")
-    //             } else {
-    //                 anyhow!("Local MQTT publish has timed out")
-    //             });
-    //             break;
-    //         }
-    //         Ok(Event::Incoming(Incoming::Disconnect)) => {
-    //             err = Some(anyhow!(
-    //                 "Client was disconnected from mosquitto during connection check"
-    //             ));
-    //             break;
-    //         }
-    //         Err(e) => {
-    //             err = Some(
-    //                 anyhow::Error::from(e)
-    //                     .context("Failed to connect to mosquitto for connection check"),
-    //             );
-    //             break;
-    //         }
-    //         _ => {}
-    //     }
-    // }
-
-    // // Cleanly disconnect client
-    // client.disconnect().await?;
-    // loop {
-    //     match event_loop.poll().await {
-    //         Ok(Event::Outgoing(Outgoing::Disconnect)) | Err(_) => break,
-    //         _ => {}
-    //     }
-    // }
     let built_in_bridge_health = bridge_health_topic(topic_prefix, tedge_config).name;
     const CLIENT_ID: &str = "check_connection_tb";
-
-    eprintln!("=== CHECK CONNECTION DEBUG ===");
-    eprintln!("MQTT host: {}", tedge_config.mqtt.client.host);
-    eprintln!("MQTT port: {}", tedge_config.mqtt.client.port);
-    eprintln!("Built-in bridge: {}", tedge_config.mqtt.bridge.built_in);
-    eprintln!("Topic prefix: {}", topic_prefix);
-    eprintln!("Bridge health topic: {}", built_in_bridge_health);
-    eprintln!("==============================");
 
     let mut mqtt_options = tedge_config
         .mqtt_config()?
@@ -276,21 +161,6 @@ pub async fn provision_device_tb(
         "deviceName": device_name,
         "hash": cert_hash,
     });
-
-    // // DEBUG: Print the exact payload being sent
-    // eprintln!("=== DEBUG PROVISIONING PAYLOAD ===");
-    // eprintln!("Device name: {}", device_name);
-    // eprintln!("Provision key: {}", provision_key);
-    // eprintln!(
-    //     "Cert hash (first 40 chars): {}...",
-    //     &cert_hash[..40.min(cert_hash.len())]
-    // );
-    // eprintln!("Cert hash length: {}", cert_hash.len());
-    // eprintln!(
-    //     "Full payload: {}",
-    //     serde_json::to_string_pretty(&payload).unwrap()
-    // );
-    // eprintln!("==================================");
 
     let payload_bytes = serde_json::to_vec(&payload)
         .map_err(|e| anyhow!("Failed to serialize provisioning request: {}", e))?;
