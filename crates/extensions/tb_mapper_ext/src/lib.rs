@@ -110,35 +110,6 @@ errors.mqtt.topic = "{errors_topic}"
 /// - Attributes: `v1/gateway/attributes`
 ///
 /// This transformer maps thin-edge.io topics to ThingsBoard topics.
-// fn map_to_tb_topic(source: &str) -> Option<String> {
-//     // Use topic segments to determine message type and device scope.
-//     // thin-edge.io topics follow: te/<device_type>/<device_id>/<service_type>/<service_id>/<channel>/<type>
-//     match source.split('/').collect::<Vec<_>>()[..] {
-//         // Main device measurements -> Telemetry
-//         [_, "device", "main", _, _, "m", _] => Some("v1/devices/me/telemetry".to_string()),
-//         // Child device measurements -> Gateway telemetry
-//         [_, "device", _, _, _, "m", _] => Some("v1/gateway/telemetry".to_string()),
-//         // Main device events -> Telemetry
-//         [_, "device", "main", _, _, "e", _] => Some("v1/devices/me/telemetry".to_string()),
-//         // Child device events -> Gateway telemetry
-//         [_, "device", _, _, _, "e", _] => Some("v1/gateway/telemetry".to_string()),
-//         // Main device alarms -> Telemetry
-//         [_, "device", "main", _, _, "a", _] => Some("v1/devices/me/telemetry".to_string()),
-//         // Child device alarms -> Gateway telemetry
-//         [_, "device", _, _, _, "a", _] => Some("v1/gateway/telemetry".to_string()),
-//         // Main device twin -> Attributes
-//         [_, "device", "main", _, _, "twin", _] => Some("v1/devices/me/attributes".to_string()),
-//         // Child device twin -> Gateway attributes
-//         [_, "device", _, _, _, "twin", _] => Some("v1/gateway/attributes".to_string()),
-//         // Main device health -> Telemetry
-//         [_, "device", "main", _, _, "status", "health"] => {
-//             Some("v1/devices/me/telemetry".to_string())
-//         }
-//         // Child device health -> Gateway telemetry
-//         [_, "device", _, _, _, "status", "health"] => Some("v1/gateway/telemetry".to_string()),
-//         _ => None,
-//     }
-// }
 fn map_to_tb_topic(source: &str, prefix: &str) -> Option<String> {
     match source.split('/').collect::<Vec<_>>()[..] {
         // Main device measurements -> Telemetry
@@ -252,10 +223,4 @@ mod tests {
         let topic = map_to_tb_topic("te/device/main///cmd/restart", "tb");
         assert_eq!(topic, None);
     }
-
-    // #[test]
-    // fn test_extract_device_name() {
-    //     assert_eq!(extract_device_name("te/device/child01///m/temp"), "child01");
-    //     assert_eq!(extract_device_name("te/device/main///m/temp"), "main");
-    // }
 }
